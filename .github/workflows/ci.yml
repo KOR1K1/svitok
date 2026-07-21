@@ -1,0 +1,129 @@
+name: CI
+
+# Запуск только руками. У GitHub жёсткий лимит минут, а macOS-раннеры жрут их ×10.
+# Поэтому автозапуск на push/PR отключён специально.
+on:
+  workflow_dispatch:
+    inputs:
+      include_macos:
+        description: "Также собрать под macOS (дорогие ×10 минуты)"
+        type: boolean
+        default: false
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  # Криптоядро и общий слой - чистые Rust-тесты (RFC-векторы, golden-векторы).
+  core-tests:
+    name: Rust core tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Test core + common + cli
+        run: cargo test -p svitok-core -p svitok-common -p svitok-cli --verbose
+
+  # Фронтенд: проверка типов и сборка Vite.
+  frontend:
+    name: Frontend typecheck & build
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: app
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: app/package-lock.json
+      - run: npm ci
+      - run: npx tsc --noEmit
+      - run: npm run build
+
+  # Десктопные бандлы. macOS из матрицы выкинут (минуты ×10),
+  # включить его можно через input include_macos.
+  desktop:
+    name: Desktop build (${{ matrix.os }})
+    needs: [core-tests, frontend]
+    strategy:
+      fail-fast: false
+      matrix:
+        os: ${{ inputs.include_macos && fromJSON('["ubuntu-latest","windows-latest","macos-latest"]') || fromJSON('["ubuntu-latest","windows-latest"]') }}
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: app/package-lock.json
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: app/src-tauri -> ../../target
+      # Linux: системные пакеты Tauri плюс libsecret для keyring.
+      - name: Install Linux deps
+        if: matrix.os == 'ubuntu-latest'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev \
+            librsvg2-dev patchelf libsecret-1-dev libglib2.0-dev
+      - name: Install frontend deps
+        working-directory: app
+        run: npm ci
+      - name: Build app bundle
+        working-directory: app
+        run: npx tauri build
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: svitok-desktop-${{ matrix.os }}
+          path: |
+            target/release/bundle/**/*.exe
+            target/release/bundle/**/*.msi
+            target/release/bundle/**/*.dmg
+            target/release/bundle/**/*.AppImage
+            target/release/bundle/**/*.deb
+          if-no-files-found: ignore
+
+  # Android APK (unsigned debug, просто убедиться что сборка проходит).
+  android:
+    name: Android build
+    needs: [core-tests, frontend]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: app/package-lock.json
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
+      - name: Install NDK
+        run: sdkmanager "ndk;28.2.13676358"
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-linux-android,armv7-linux-androideabi,i686-linux-android,x86_64-linux-android
+      - uses: Swatinem/rust-cache@v2
+      - name: Install frontend deps
+        working-directory: app
+        run: npm ci
+      - name: Build APK
+        working-directory: app
+        env:
+          NDK_HOME: ${{ env.ANDROID_HOME }}/ndk/28.2.13676358
+        run: npx tauri android build --apk --target aarch64
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: svitok-android-apk
+          path: app/src-tauri/gen/android/app/build/outputs/apk/**/*.apk
+          if-no-files-found: ignore
