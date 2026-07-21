@@ -1,0 +1,16 @@
+[package]
+name = "svitok-common"
+version = "0.1.0"
+edition = "2021"
+description = "Общий std-слой Свитка: файлы sites.txt/vault.b32 и системный ГСЧ"
+
+[dependencies]
+svitok-core = { path = "../core" }
+
+[lib]
+name = "svitok_common"
+
+[dev-dependencies]
+# Нужны только тестам (round-trip проверка QR), в релиз не попадают.
+rqrr = "0.10"
+image = { version = "0.25", default-features = false }

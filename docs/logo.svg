@@ -1,0 +1,65 @@
+<svg width="1024" height="1024" viewBox="0 0 1024 1024" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#2a231c"/>
+      <stop offset="0.55" stop-color="#17130f"/>
+      <stop offset="1" stop-color="#0b0908"/>
+    </linearGradient>
+    <radialGradient id="glow" cx="0.5" cy="0.30" r="0.85">
+      <stop offset="0" stop-color="#d4643e" stop-opacity="0.30"/>
+      <stop offset="0.55" stop-color="#d4643e" stop-opacity="0.05"/>
+      <stop offset="1" stop-color="#d4643e" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="sheen" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#ffffff" stop-opacity="0.38"/>
+      <stop offset="0.42" stop-color="#ffffff" stop-opacity="0.08"/>
+      <stop offset="1" stop-color="#ffffff" stop-opacity="0"/>
+    </linearGradient>
+    <linearGradient id="spec" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#ffffff" stop-opacity="0.55"/>
+      <stop offset="1" stop-color="#ffffff" stop-opacity="0"/>
+    </linearGradient>
+    <linearGradient id="parch" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#f5ecd9"/>
+      <stop offset="1" stop-color="#dbccac"/>
+    </linearGradient>
+    <linearGradient id="roll" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#ecdfc4"/>
+      <stop offset="1" stop-color="#c4ae86"/>
+    </linearGradient>
+    <radialGradient id="wax" cx="0.38" cy="0.32" r="0.75">
+      <stop offset="0" stop-color="#ec7f55"/>
+      <stop offset="0.6" stop-color="#d4643e"/>
+      <stop offset="1" stop-color="#a5411e"/>
+    </radialGradient>
+    <clipPath id="squircle"><rect x="64" y="64" width="896" height="896" rx="236"/></clipPath>
+  </defs>
+
+  <g clip-path="url(#squircle)">
+    <rect x="64" y="64" width="896" height="896" fill="url(#bg)"/>
+    <rect x="64" y="64" width="896" height="896" fill="url(#glow)"/>
+    <ellipse cx="512" cy="70" rx="660" ry="430" fill="url(#sheen)"/>
+    <path d="M150 96 q362 -150 724 0 q-362 96 -724 0 z" fill="url(#spec)" opacity="0.7"/>
+
+    <g transform="translate(512 508)">
+      <rect x="-238" y="-150" width="476" height="300" rx="24" fill="url(#parch)"/>
+      <g stroke="#4a3b28" stroke-width="20" stroke-linecap="round" opacity="0.62">
+        <line x1="-150" y1="-72" x2="150" y2="-72"/>
+        <line x1="-150" y1="-8" x2="150" y2="-8"/>
+        <line x1="-150" y1="56" x2="70" y2="56"/>
+      </g>
+      <rect x="-292" y="-172" width="70" height="344" rx="35" fill="url(#roll)"/>
+      <rect x="222" y="-172" width="70" height="344" rx="35" fill="url(#roll)"/>
+      <line x1="-257" y1="-150" x2="-257" y2="150" stroke="#a8916a" stroke-width="7" stroke-linecap="round" opacity="0.7"/>
+      <line x1="257" y1="-150" x2="257" y2="150" stroke="#a8916a" stroke-width="7" stroke-linecap="round" opacity="0.7"/>
+
+      <circle cx="150" cy="118" r="62" fill="url(#wax)"/>
+      <circle cx="150" cy="118" r="62" fill="none" stroke="#7e3316" stroke-width="5" opacity="0.45"/>
+      <path d="M176 96 a38 38 0 1 0 0 44" fill="none" stroke="#fbeee6" stroke-width="13" stroke-linecap="round" opacity="0.9"/>
+      <ellipse cx="132" cy="98" rx="22" ry="13" fill="#ffffff" opacity="0.28"/>
+    </g>
+
+    <rect x="65" y="65" width="894" height="894" rx="235" fill="none" stroke="#ffffff" stroke-opacity="0.12" stroke-width="2.5"/>
+    <path d="M300 66 h560 a196 196 0 0 1 100 100" fill="none" stroke="#ffffff" stroke-opacity="0.10" stroke-width="3" stroke-linecap="round"/>
+  </g>
+</svg>

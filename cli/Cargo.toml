@@ -1,0 +1,12 @@
+[package]
+name = "svitok"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+svitok-core = { path = "../core" }
+svitok-common = { path = "../common" }
+
+[[bin]]
+name = "svitok"
+path = "src/main.rs"

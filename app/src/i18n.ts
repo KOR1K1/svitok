@@ -1,0 +1,493 @@
+// Два языка, RU и EN. t(key, vars) подставляет {name}.
+// Язык берём так: сохранённый, потом системный, иначе русский. Лежит в localStorage
+// (не секрет - просто настройка интерфейса).
+
+export type Lang = "ru" | "en";
+type Dict = Record<string, string>;
+
+const ru: Dict = {
+  "app.name": "Свиток",
+  "app.tagline": "Бумажный менеджер паролей. Один сид на все устройства — пароли везде одинаковые.",
+  "err.core": "Не удалось связаться с ядром: {e}",
+
+  "create.new": "Создать новый Свиток",
+  "create.restore": "У меня уже есть сид — восстановить",
+  "create.title": "Новый Свиток",
+  "create.hint": "Придумайте мастер-фразу. Она останется только у вас в голове и не сохранится нигде. Сид сгенерируется случайно — его вы перепишете на листок.",
+  "create.phrase": "Мастер-фраза",
+  "create.phraseRepeat": "Повторите фразу",
+  "create.submit": "Создать Свиток",
+  "create.computing": "Вычисляю ключ…",
+  "create.errShort": "Фраза слишком короткая",
+  "create.errMismatch": "Фразы не совпали",
+  "create.weak": "Слишком слабо. Возьмите 4-5 случайных слов или хотя бы 12 символов - если листок украдут, это единственная защита.",
+  "create.strength.weak": "Слабая фраза",
+  "create.strength.ok": "Нормально",
+  "create.strength.good": "Хорошая фраза",
+
+  "seed.title": "Запишите сид",
+  "seed.warn": "Показывается один раз. Перепишите на бумагу — без этого Свиток не восстановить.",
+  "seed.fp": "Отпечаток ключа: {fp} — допишите рядом",
+  "seed.done": "Я переписал на листок",
+
+  "restore.title": "Восстановить Свиток",
+  "restore.hint": "Введите сид с листка первого устройства и ту же мастер-фразу. Пароли получатся идентичными. Сверьте отпечаток ключа с записанным на листке.",
+  "restore.seedPh": "Сид с листка: строки «01 …» или 26 символов",
+  "restore.phrasePh": "Та же мастер-фраза",
+  "restore.submit": "Восстановить",
+  "restore.back": "Назад",
+  "restore.fpToast": "Отпечаток ключа: {fp} — сверьте с листком",
+  "restore.errNoSeed": "Введите сид",
+  "restore.errNoPhrase": "Введите фразу",
+
+  "unlock.open": "Открыть",
+  "unlock.wrong": "Не открылось — проверьте фразу",
+  "unlock.keyOk": "Ключ {fp} ✓",
+
+  "tab.sites": "Сайты",
+  "tab.codes": "Коды",
+  "tab.vault": "Сейф",
+
+  "sites.search": "Поиск сайта",
+  "sites.notFound": "Ничего не найдено",
+  "sites.emptyDesc": "Здесь живут сайты и их пароли. Пароль не хранится — он вычисляется из сида и фразы.",
+  "sites.add": "+  Добавить сайт",
+  "sites.noLogin": "без логина",
+  "sites.addAria": "Добавить сайт",
+
+  "codes.empty": "Нет кодов 2FA. Добавьте TOTP-секрет — кнопка внизу.",
+  "codes.copied": "Код скопирован",
+  "codes.addAria": "Добавить код",
+
+  "vault.addSection": "Добавить в сейф",
+  "vault.other": "Прочее",
+  "vault.addPw": "Пароль",
+  "vault.addTotp": "TOTP-секрет",
+  "vault.addCodes": "Recovery-коды",
+  "vault.addNote": "Заметка",
+  "vault.showPaper": "Показать листок",
+  "vault.lock": "Заблокировать",
+  "vault.empty": "Сейф пуст. Сюда кладут TOTP, чужие пароли, recovery-коды, заметки.",
+
+  "kind.pw": "пароль",
+  "kind.totp": "totp",
+  "kind.codes": "коды",
+  "kind.note": "заметка",
+
+  "pw.login": "Логин: {l}",
+  "pw.noLogin": "Без логина",
+  "pw.length": "длина {n}",
+  "pw.copy": "Скопировать",
+  "pw.clearing": "Очистится через {n} с",
+  "pw.reveal": "Показать (удерживать)",
+  "pw.big": "Крупно",
+  "pw.qr": "QR",
+  "pw.bump": "Сменить пароль (сейчас v{n})",
+  "pw.bumped": "Теперь v{n} — смените на сайте",
+  "pw.edit": "Изменить",
+
+  "large.title": "Для перепечатывания",
+
+  "qr.title": "QR",
+  "qr.hint": "Наведите камеру другого устройства. Код исчезнет при закрытии.",
+
+  "addsite.title": "Новый сайт",
+  "addsite.namePh": "Сайт (напр. mega.nz)",
+  "addsite.loginPh": "Логин / e-mail (необязательно)",
+  "addsite.lenLabel": "Длина пароля",
+  "addsite.charsLabel": "Разрешённые символы",
+  "addsite.add": "Добавить",
+  "addsite.save": "Сохранить",
+  "addsite.editTitle": "Изменить сайт",
+  "addsite.editNote": "Смена логина, длины или набора символов изменит выводимый пароль — не забудьте обновить его на сайте.",
+  "addsite.delete": "Удалить сайт",
+  "addsite.deleteAsk": "Удалить «{name}» из списка? Пароль на самом сайте не изменится, но без записи вычислить его заново не выйдет.",
+  "addsite.deleteConfirm": "Да, удалить",
+  "addsite.errName": "Укажите сайт",
+  "addsite.errClass": "Выберите хотя бы один класс символов",
+
+  "common.cancel": "Отмена",
+
+  "showseed.title": "Сид (для листка)",
+  "showseed.hint": "Перепишите эти строки на бумагу и храните офлайн. Сид — половина ключа: вместе с фразой в голове он выводит все пароли. Никогда не фотографируйте и не храните в облаке.",
+  "settings.showSeed": "Показать сид",
+
+  "addtotp.title": "TOTP-секрет",
+  "addtotp.labelPh": "Метка (напр. github)",
+  "addtotp.secretPh": "Секрет Base32 (A–Z 2–7)",
+  "addtotp.digits8": "8 цифр (обычно 6)",
+  "addtotp.add": "Добавить и проверить",
+  "addtotp.errFill": "Заполните метку и секрет",
+  "addtotp.added": "Добавлено. Текущий код: {code}",
+  "addtotp.scan": "Сканировать QR",
+  "scan.noCamera": "Нет доступа к камере",
+  "scan.notOtp": "Это не QR аутентификатора (otpauth)",
+
+  "secret.pwTitle": "Чужой пароль",
+  "secret.noteTitle": "Заметка",
+  "secret.codesTitle": "Recovery-коды",
+  "secret.labelPh": "Метка",
+  "secret.codesPh": "Коды, по одному в строке",
+  "secret.notePh": "Текст заметки",
+  "secret.pwPh": "Пароль",
+  "secret.save": "Сохранить",
+  "secret.errFill": "Заполните оба поля",
+
+  "entry.type": "Тип: {k}",
+  "entry.delete": "Удалить из сейфа",
+
+  "paper.title": "Листок",
+
+  "onb.skip": "Пропустить",
+  "onb.next": "Далее",
+  "onb.start": "Начать",
+  "onb.s1.title": "Свиток",
+  "onb.s1.body": "Менеджер паролей без интернета и без облака. Всё, что нужно для восстановления, — на бумаге и у вас в голове.",
+  "onb.s2.title": "Сид и фраза",
+  "onb.s2.body": "Сид — случайный код, его создаёт приложение, и вы переписываете его на бумагу. Мастер-фраза — то, что вы придумываете и держите только в голове. Вместе они дают ваши пароли.",
+  "onb.s3.title": "Пароль можно вернуть",
+  "onb.s3.body": "Пароль вычисляется из сида, фразы и настроек сайта. Введёшь тот же сид, ту же фразу и то же имя сайта с теми же настройками — получишь тот же пароль. Даже без резервной копии.",
+  "onb.s4.title": "Пароли не хранятся",
+  "onb.s4.body": "Пароли не лежат ни на диске, ни в облаке — они каждый раз вычисляются заново. Красть нечего. Но записать сид на бумагу обязательно: без него не восстановить.",
+  "onb.s5.title": "Делай резервную копию",
+  "onb.s5.body": "Сид — это секрет: бумага и голова. А список сайтов — не секрет; сохраняй его отдельно (текст в почту/облако/файл или на бумагу) после каждого добавления, смены пароля и удаления. Иначе на новом телефоне придётся вспоминать все сайты и их настройки.",
+  "onb.s6.title": "Перенос между устройствами",
+  "onb.s6.body": "Один сид и фраза дают те же пароли везде. Список переносится QR-кодом между устройствами или резервной копией — на новый телефон. Всё без интернета.",
+
+  "help.phrase.title": "Что такое мастер-фраза?",
+  "help.phrase.body": "Секрет, который вы придумываете и нигде не записываете — только запоминаете. Возьмите 4–5 случайных слов. Забудете — восстановить нельзя, поэтому выбирайте то, что точно запомните. Вводится всегда одинаково: регистр и пробелы важны.",
+  "help.seed.title": "Что такое сид?",
+  "help.seed.body": "Случайный код, который создаёт приложение. Перепишите его на бумагу и храните надёжно — это единственный способ восстановить Свиток на новом устройстве. Рядом допишите две буквы отпечатка ключа для проверки.",
+  "help.key.title": "Отпечаток ключа",
+  "help.key.body": "Две буквы, которые появляются при входе. Если фраза и сид верные, отпечаток совпадёт с записанным на листке. Другой отпечаток — значит где-то опечатка.",
+
+  "vault.settings": "Настройки",
+  "settings.title": "Настройки",
+  "settings.lang": "Язык",
+  "settings.lock": "Автоблокировка",
+  "settings.lock.30s": "30 секунд",
+  "settings.lock.1m": "1 минута",
+  "settings.lock.2m": "2 минуты",
+  "settings.lock.5m": "5 минут",
+  "settings.lock.never": "Никогда",
+  "settings.lockOnBg": "Блокировать при сворачивании",
+  "settings.lockHint": "«Никогда» отключает автоблокировку по таймеру. Отключите «при сворачивании», если надоело вводить фразу после каждого переключения приложения.",
+  "settings.about": "О приложении",
+  "settings.aboutBody": "Свиток — офлайновый менеджер паролей. Пароли вычисляются из сида и фразы и нигде не хранятся. Открытый исходный код.",
+  "settings.danger": "Опасная зона",
+  "settings.destroy": "Уничтожить Свиток",
+  "settings.destroyAsk": "Стереть сид и все данные с этого устройства? Пароли на сайтах не изменятся, но восстановить Свиток можно будет только с бумажного сида и фразы.",
+  "settings.destroyConfirm": "Да, стереть всё",
+  "settings.backup": "Резервная копия",
+  "settings.sync": "Перенос списка (QR)",
+  "settings.interface": "Интерфейс",
+  "settings.haptics": "Вибрация (тактильный отклик)",
+  "settings.screenProtect": "Защита от скриншотов",
+
+  "backup.title": "Резервная копия",
+  "backup.exportHint": "Сохрани этот текст (почта / облако / файл). Это НЕ секрет — без сида и фразы он бесполезен. Сид сюда НЕ входит: он хранится отдельно, на бумаге. Обновляй после каждого изменения списка.",
+  "backup.copy": "Скопировать копию",
+  "backup.copied": "Скопировано",
+  "backup.importHint": "Восстановление на новом устройстве: сначала введи тот же сид и фразу, потом вставь сюда текст копии.",
+  "backup.importPh": "Вставь сюда текст резервной копии",
+  "backup.import": "Восстановить список",
+  "backup.imported": "Восстановлено сайтов: {n}",
+  "backup.remind": "Список изменён — обнови резервную копию (Сейф → Настройки → Резервная копия)",
+
+  "sync.title": "Перенос списка по QR",
+  "sync.hint": "Быстрый перенос списка сайтов на другое устройство без ввода вручную. Это НЕ секрет: пароли на втором устройстве выводятся из того же сида и фразы. Секреты сейфа так не переносятся — для них используй резервную копию.",
+  "sync.show": "Показать QR этого устройства",
+  "sync.scan": "Сканировать QR другого устройства",
+  "sync.scanHint": "Наведи камеру на QR, показанный на другом устройстве.",
+  "sync.imported": "Перенесено сайтов: {n}",
+
+  "tools.show": "Показать",
+  "tools.hide": "Скрыть",
+  "tools.paste": "Вставить",
+  "tools.copy": "Копировать",
+  "tools.copied": "Скопировано",
+  "tools.clipEmpty": "Буфер обмена пуст",
+  "tools.clipErr": "Нет доступа к буферу обмена",
+
+  "coach.done": "Понятно",
+  "coach.s1.title": "Разделы",
+  "coach.s1.body": "Внизу — три раздела: Сайты, Коды (2FA) и Сейф.",
+  "coach.s2.title": "Добавить сайт",
+  "coach.s2.body": "Нажми плюс, чтобы добавить сайт. Пароль вычислится сам — хранить его не нужно.",
+  "coach.s3.title": "Коды 2FA",
+  "coach.s3.body": "Здесь одноразовые коды двухфакторной защиты. Добавь секрет вручную или отсканируй QR прямо с сайта.",
+  "coach.s4.title": "Настройки и копия",
+  "coach.s4.body": "В «Сейфе» — чужие пароли, заметки, а ещё настройки и резервная копия. Обязательно сохраняй копию списка после изменений: иначе на новом телефоне сайты не вернуть.",
+
+  "settings.howto": "Как это работает",
+  "howto.title": "Как это работает",
+  "howto.seedH": "Сид",
+  "howto.seedB": "Случайный код, который придумывает приложение (например «01 PRYK …»). Ты переписываешь его на бумагу. Это первая половина ключа. Хранится только на листке — нигде в приложении его нет.",
+  "howto.phraseH": "Мастер-фраза",
+  "howto.phraseB": "Секретные слова, которые придумываешь и запоминаешь ты. Нигде не записываются. Это вторая половина ключа. Лучше 4–5 случайных слов, которые точно не забудешь.",
+  "howto.deriveH": "Пароли вычисляются, а не хранятся",
+  "howto.deriveB": "Для каждого сайта пароль считается из сида, фразы и настроек сайта (имя, логин, длина, символы, номер версии). Одинаковые данные → одинаковый пароль. Поэтому красть у приложения нечего — паролей в нём нет.",
+  "howto.backupH": "Зачем резервная копия",
+  "howto.backupB": "Сид и фраза возвращают ключ, но НЕ список сайтов — какие у тебя сайты и с какими настройками. Это не секрет, поэтому сохраняй копию списка (текст в почту/облако/файл или на бумагу) после каждого изменения. Сейф → Настройки → Резервная копия.",
+  "howto.riskH": "Как можно потерять доступ",
+  "howto.riskB": "Даже помня сид и фразу, ты получишь ДРУГОЙ пароль, если забудешь параметры сайта: логин, длину, набор символов и особенно номер версии (если менял пароль после утечки). Поэтому храни либо резервную копию списка, либо записывай эти настройки. Забудешь фразу — потеряешь всё безвозвратно.",
+};
+
+const en: Dict = {
+  "app.name": "Svitok",
+  "app.tagline": "Paper password manager. One seed across all devices — the same passwords everywhere.",
+  "err.core": "Failed to reach the core: {e}",
+
+  "create.new": "Create new Svitok",
+  "create.restore": "I already have a seed — restore",
+  "create.title": "New Svitok",
+  "create.hint": "Choose a master phrase. It stays only in your head and is never saved anywhere. The seed is generated randomly — you'll copy it onto paper.",
+  "create.phrase": "Master phrase",
+  "create.phraseRepeat": "Repeat the phrase",
+  "create.submit": "Create Svitok",
+  "create.computing": "Deriving key…",
+  "create.errShort": "Phrase is too short",
+  "create.errMismatch": "Phrases don't match",
+  "create.weak": "Too weak. Use 4-5 random words or at least 12 characters - if your paper is stolen, this is the only thing protecting you.",
+  "create.strength.weak": "Weak phrase",
+  "create.strength.ok": "OK",
+  "create.strength.good": "Strong phrase",
+
+  "seed.title": "Write down the seed",
+  "seed.warn": "Shown only once. Copy it onto paper — without it the Svitok can't be restored.",
+  "seed.fp": "Key fingerprint: {fp} — write it next to the seed",
+  "seed.done": "I've written it down",
+
+  "restore.title": "Restore Svitok",
+  "restore.hint": "Enter the seed from your first device's paper and the same master phrase. The passwords will be identical. Verify the key fingerprint against your paper.",
+  "restore.seedPh": "Seed from paper: lines “01 …” or 26 characters",
+  "restore.phrasePh": "The same master phrase",
+  "restore.submit": "Restore",
+  "restore.back": "Back",
+  "restore.fpToast": "Key fingerprint: {fp} — check against paper",
+  "restore.errNoSeed": "Enter the seed",
+  "restore.errNoPhrase": "Enter the phrase",
+
+  "unlock.open": "Unlock",
+  "unlock.wrong": "Didn't open — check the phrase",
+  "unlock.keyOk": "Key {fp} ✓",
+
+  "tab.sites": "Sites",
+  "tab.codes": "Codes",
+  "tab.vault": "Vault",
+
+  "sites.search": "Search sites",
+  "sites.notFound": "Nothing found",
+  "sites.emptyDesc": "Sites and their passwords live here. The password isn't stored — it's derived from the seed and phrase.",
+  "sites.add": "+  Add site",
+  "sites.noLogin": "no login",
+  "sites.addAria": "Add site",
+
+  "codes.empty": "No 2FA codes yet. Add a TOTP secret — button below.",
+  "codes.copied": "Code copied",
+  "codes.addAria": "Add code",
+
+  "vault.addSection": "Add to vault",
+  "vault.other": "Other",
+  "vault.addPw": "Password",
+  "vault.addTotp": "TOTP secret",
+  "vault.addCodes": "Recovery codes",
+  "vault.addNote": "Note",
+  "vault.showPaper": "Show the paper",
+  "vault.lock": "Lock",
+  "vault.empty": "The vault is empty. Keep TOTP secrets, other passwords, recovery codes and notes here.",
+
+  "kind.pw": "password",
+  "kind.totp": "totp",
+  "kind.codes": "codes",
+  "kind.note": "note",
+
+  "pw.login": "Login: {l}",
+  "pw.noLogin": "No login",
+  "pw.length": "length {n}",
+  "pw.copy": "Copy",
+  "pw.clearing": "Clears in {n}s",
+  "pw.reveal": "Reveal (hold)",
+  "pw.big": "Large",
+  "pw.qr": "QR",
+  "pw.bump": "Change password (now v{n})",
+  "pw.bumped": "Now v{n} — change it on the site",
+  "pw.edit": "Edit",
+
+  "large.title": "For retyping",
+
+  "qr.title": "QR",
+  "qr.hint": "Point the other device's camera at it. The code disappears when closed.",
+
+  "addsite.title": "New site",
+  "addsite.namePh": "Site (e.g. mega.nz)",
+  "addsite.loginPh": "Login / email (optional)",
+  "addsite.lenLabel": "Password length",
+  "addsite.charsLabel": "Allowed characters",
+  "addsite.add": "Add",
+  "addsite.save": "Save",
+  "addsite.editTitle": "Edit site",
+  "addsite.editNote": "Changing the login, length or character set changes the derived password — remember to update it on the site.",
+  "addsite.delete": "Delete site",
+  "addsite.deleteAsk": "Remove \"{name}\" from the list? The password on the site itself won't change, but without this entry you won't be able to re-derive it.",
+  "addsite.deleteConfirm": "Yes, delete",
+  "addsite.errName": "Enter a site",
+  "addsite.errClass": "Choose at least one character class",
+
+  "common.cancel": "Cancel",
+
+  "showseed.title": "Seed (for the paper)",
+  "showseed.hint": "Copy these lines onto paper and keep them offline. The seed is half the key: together with the phrase in your head it derives every password. Never photograph it or store it in the cloud.",
+  "settings.showSeed": "Show seed",
+
+  "addtotp.title": "TOTP secret",
+  "addtotp.labelPh": "Label (e.g. github)",
+  "addtotp.secretPh": "Base32 secret (A–Z 2–7)",
+  "addtotp.digits8": "8 digits (usually 6)",
+  "addtotp.add": "Add and verify",
+  "addtotp.errFill": "Fill in the label and secret",
+  "addtotp.added": "Added. Current code: {code}",
+  "addtotp.scan": "Scan QR",
+  "scan.noCamera": "No camera access",
+  "scan.notOtp": "Not an authenticator (otpauth) QR",
+
+  "secret.pwTitle": "Existing password",
+  "secret.noteTitle": "Note",
+  "secret.codesTitle": "Recovery codes",
+  "secret.labelPh": "Label",
+  "secret.codesPh": "Codes, one per line",
+  "secret.notePh": "Note text",
+  "secret.pwPh": "Password",
+  "secret.save": "Save",
+  "secret.errFill": "Fill in both fields",
+
+  "entry.type": "Type: {k}",
+  "entry.delete": "Delete from vault",
+
+  "paper.title": "The paper",
+
+  "onb.skip": "Skip",
+  "onb.next": "Next",
+  "onb.start": "Get started",
+  "onb.s1.title": "Svitok",
+  "onb.s1.body": "A password manager with no internet and no cloud. Everything needed to recover is on paper and in your head.",
+  "onb.s2.title": "Seed and phrase",
+  "onb.s2.body": "The seed is a random code — the app creates it and you copy it onto paper. The master phrase is what you invent and keep only in your head. Together they produce your passwords.",
+  "onb.s3.title": "A password can be re-derived",
+  "onb.s3.body": "A password is derived from the seed, the phrase and the site's settings. Enter the same seed, the same phrase and the same site name with the same settings — you get the same password. Even without a backup.",
+  "onb.s4.title": "Passwords aren't stored",
+  "onb.s4.body": "Passwords live neither on disk nor in the cloud — they are derived anew every time. Nothing to steal. But you must write the seed on paper: without it there's no recovery.",
+  "onb.s5.title": "Keep a backup",
+  "onb.s5.body": "The seed is the secret: paper and memory. But your site list is not secret — save it separately (text to email/cloud/file, or on paper) after every add, password change and delete. Otherwise on a new phone you'll have to recall every site and its settings.",
+  "onb.s6.title": "Move between devices",
+  "onb.s6.body": "One seed and phrase give the same passwords everywhere. The list transfers by QR between devices, or by backup — to a new phone. All without internet.",
+
+  "help.phrase.title": "What is the master phrase?",
+  "help.phrase.body": "A secret you invent and never write down — only memorize. Use 4–5 random words. If you forget it, recovery is impossible, so pick something you'll surely remember. Always typed identically: case and spaces matter.",
+  "help.seed.title": "What is the seed?",
+  "help.seed.body": "A random code the app creates. Copy it onto paper and keep it safe — it's the only way to restore your Svitok on a new device. Write the two-letter key fingerprint next to it for verification.",
+  "help.key.title": "Key fingerprint",
+  "help.key.body": "Two letters shown at unlock. If the phrase and seed are correct, the fingerprint matches the one on your paper. A different fingerprint means a typo somewhere.",
+
+  "vault.settings": "Settings",
+  "settings.title": "Settings",
+  "settings.lang": "Language",
+  "settings.lock": "Auto-lock",
+  "settings.lock.30s": "30 seconds",
+  "settings.lock.1m": "1 minute",
+  "settings.lock.2m": "2 minutes",
+  "settings.lock.5m": "5 minutes",
+  "settings.lock.never": "Never",
+  "settings.lockOnBg": "Lock when minimized",
+  "settings.lockHint": "\"Never\" disables the idle auto-lock timer. Turn off \"when minimized\" if re-entering your phrase after every app switch gets annoying.",
+  "settings.about": "About",
+  "settings.aboutBody": "Svitok is an offline password manager. Passwords are derived from the seed and phrase and never stored. Open source.",
+  "settings.danger": "Danger zone",
+  "settings.destroy": "Destroy Svitok",
+  "settings.destroyAsk": "Erase the seed and all data from this device? Passwords on sites won't change, but you'll only be able to restore Svitok from the paper seed and phrase.",
+  "settings.destroyConfirm": "Yes, erase everything",
+  "settings.backup": "Backup",
+  "settings.sync": "Transfer list (QR)",
+  "settings.interface": "Interface",
+  "settings.haptics": "Vibration (haptic feedback)",
+  "settings.screenProtect": "Screenshot protection",
+
+  "backup.title": "Backup",
+  "backup.exportHint": "Save this text (email / cloud / file). It's NOT secret — useless without the seed and phrase. The seed is NOT included here: it's kept separately, on paper. Update it after every change to your list.",
+  "backup.copy": "Copy backup",
+  "backup.copied": "Copied",
+  "backup.importHint": "Restoring on a new device: first enter the same seed and phrase, then paste your backup text here.",
+  "backup.importPh": "Paste your backup text here",
+  "backup.import": "Restore list",
+  "backup.imported": "Restored {n} sites",
+  "backup.remind": "List changed — update your backup (Vault → Settings → Backup)",
+
+  "sync.title": "Transfer list via QR",
+  "sync.hint": "Quickly move your site list to another device without retyping. This is NOT secret: passwords on the second device are derived from the same seed and phrase. Vault secrets are not transferred this way — use a backup for those.",
+  "sync.show": "Show this device's QR",
+  "sync.scan": "Scan another device's QR",
+  "sync.scanHint": "Point the camera at the QR shown on the other device.",
+  "sync.imported": "Transferred {n} sites",
+
+  "tools.show": "Show",
+  "tools.hide": "Hide",
+  "tools.paste": "Paste",
+  "tools.copy": "Copy",
+  "tools.copied": "Copied",
+  "tools.clipEmpty": "Clipboard is empty",
+  "tools.clipErr": "No clipboard access",
+
+  "coach.done": "Got it",
+  "coach.s1.title": "Sections",
+  "coach.s1.body": "Three sections at the bottom: Sites, Codes (2FA) and Vault.",
+  "coach.s2.title": "Add a site",
+  "coach.s2.body": "Tap plus to add a site. The password is derived automatically — no need to store it.",
+  "coach.s3.title": "2FA codes",
+  "coach.s3.body": "One-time two-factor codes live here. Add a secret manually or scan the QR right from the site.",
+  "coach.s4.title": "Settings and backup",
+  "coach.s4.body": "The Vault holds other passwords and notes, plus settings and backup. Always save a copy of your list after changes: otherwise you can't bring your sites back on a new phone.",
+
+  "settings.howto": "How it works",
+  "howto.title": "How it works",
+  "howto.seedH": "Seed",
+  "howto.seedB": "A random code the app generates (e.g. “01 PRYK …”). You copy it onto paper. This is the first half of your key. It's stored only on paper — it's nowhere in the app.",
+  "howto.phraseH": "Master phrase",
+  "howto.phraseB": "Secret words you invent and memorize. Written down nowhere. This is the second half of your key. Best is 4–5 random words you'll surely remember.",
+  "howto.deriveH": "Passwords are derived, not stored",
+  "howto.deriveB": "For each site the password is computed from the seed, phrase and the site's settings (name, login, length, characters, version number). Same inputs → same password. So there's nothing to steal from the app — it holds no passwords.",
+  "howto.backupH": "Why you need a backup",
+  "howto.backupB": "The seed and phrase bring back the key, but NOT your list of sites — which sites you have and with what settings. This isn't secret, so save a copy of the list (text to email/cloud/file, or on paper) after every change. Vault → Settings → Backup.",
+  "howto.riskH": "How you can lose access",
+  "howto.riskB": "Even remembering the seed and phrase, you'll get a DIFFERENT password if you forget a site's settings: login, length, character set, and especially the version number (if you changed the password after a breach). So keep either a backup of the list or a note of these settings. Forget the phrase and everything is lost for good.",
+};
+
+function detect(): Lang {
+  try {
+    const saved = localStorage.getItem("svitok.lang");
+    if (saved === "ru" || saved === "en") return saved;
+  } catch { /* localStorage бывает недоступен */ }
+  return navigator.language.toLowerCase().startsWith("ru") ? "ru" : "en";
+}
+
+let lang: Lang = detect();
+document.documentElement.lang = lang;
+
+export function getLang(): Lang {
+  return lang;
+}
+
+export function setLang(l: Lang) {
+  lang = l;
+  document.documentElement.lang = l;
+  try { localStorage.setItem("svitok.lang", l); } catch { /* ну и ладно */ }
+}
+
+export function t(key: string, vars?: Record<string, string | number>): string {
+  let s = (lang === "ru" ? ru : en)[key] ?? ru[key] ?? key;
+  if (vars) {
+    for (const [k, v] of Object.entries(vars)) {
+      s = s.split("{" + k + "}").join(String(v));
+    }
+  }
+  return s;
+}

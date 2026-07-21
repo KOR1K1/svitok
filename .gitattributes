@@ -1,0 +1,12 @@
+# нормализуем переводы строк к LF, чтобы репозиторий был одинаков на всех ОС
+* text=auto eol=lf
+
+# бинарники не трогаем
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.ico binary
+*.icns binary
+*.woff2 binary
+*.jks binary
+*.keystore binary

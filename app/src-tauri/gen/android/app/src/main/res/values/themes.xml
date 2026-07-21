@@ -1,0 +1,8 @@
+<resources xmlns:tools="http://schemas.android.com/tools">
+    <!-- Тёмный фон окна = «Чернила»: нет белой вспышки при холодном старте,
+         пока WebView не отрисовался. -->
+    <style name="Theme.svitok_app" parent="Theme.MaterialComponents.DayNight.NoActionBar">
+        <item name="android:windowBackground">@color/ink_bg</item>
+        <item name="android:colorBackground">@color/ink_bg</item>
+    </style>
+</resources>

@@ -1,0 +1,10 @@
+[package]
+name = "svitok-core"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+# Пусто, и это принципиально: ни одной внешней зависимости.
+
+[lib]
+name = "svitok_core"

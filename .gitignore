@@ -1,0 +1,42 @@
+# сборки и зависимости
+/target
+**/target/
+app/dist/
+app/node_modules/
+node_modules/
+
+# секреты подписи - НИКОГДА в репозиторий
+app/src-tauri/gen/android/keystore.properties
+*.jks
+*.keystore
+
+# сгенерированные при сборке артефакты Android (кастомные исходники gen/android остаются)
+app/src-tauri/gen/android/.gradle/
+app/src-tauri/gen/android/build/
+app/src-tauri/gen/android/app/build/
+app/src-tauri/gen/android/.cxx/
+app/src-tauri/gen/android/local.properties
+app/src-tauri/gen/android/app/src/main/jniLibs/
+app/src-tauri/gen/android/app/src/main/assets/
+**/*.iml
+
+# iOS не собираем
+app/src-tauri/gen/apple/
+
+# рабочий мусор, логи, dev-хелперы, ресёрч-заметки
+*.log
+android-build*.log
+android-release.log
+cdp.mjs
+qr-test.html
+shot.png
+qa-*.png
+docs/_logo_preview.png
+docs/android-tauri-research.md
+.comment-inventory.mjs
+
+# редакторы и ОС
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
