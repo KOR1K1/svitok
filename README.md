@@ -101,8 +101,8 @@ The full, implementation-level spec - enough to reimplement Svitok from scratch 
 
 Grab a build from [**Releases**](https://github.com/KOR1K1/svitok/releases):
 
-- **Android** - `app-universal-release.apk` (sideload)
-- **Windows** - `Svitok_x64-setup.exe` (NSIS installer)
+- **Android** - `Svitok-0.1.0-android.apk` (universal, sideload)
+- **Windows** - `Svitok-0.1.0-windows-setup.exe` (NSIS installer; unsigned, so SmartScreen may warn)
 - **Linux / macOS** - build from source for now (see below)
 
 F-Droid submission is planned. There is intentionally no in-app auto-update over the network: an offline app phoning home to update itself would defeat the point.
