@@ -45,7 +45,7 @@ pub fn has_seed(app: &tauri::AppHandle, dir: &Path) -> Result<bool, String> {
     #[cfg(not(target_os = "android"))]
     {
         let _ = app;
-        Ok(FileSeedStore::new(dir).has_seed())
+        FileSeedStore::new(dir).has_seed()
     }
 }
 

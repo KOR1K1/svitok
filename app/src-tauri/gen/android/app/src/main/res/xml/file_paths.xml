@@ -1,5 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!-- Провайдер exported=false. Пути сужены до одного подкаталога кэша: раньше
+     стояли корни внешнего хранилища и всего кэша (path="."), что при появлении
+     любого share-Intent позволило бы выдать grant на произвольный файл. Сид тут
+     не фигурирует - он во внутреннем filesDir. -->
 <paths xmlns:android="http://schemas.android.com/apk/res/android">
-  <external-path name="my_images" path="." />
-  <cache-path name="my_cache_images" path="." />
+  <cache-path name="shared" path="shared/" />
 </paths>

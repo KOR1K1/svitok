@@ -23,10 +23,18 @@ impl FileSeedStore {
         keyring::Entry::new(SERVICE, ACCOUNT).map_err(|e| e.to_string())
     }
 
-    pub fn has_seed(&self) -> bool {
-        match Self::entry() {
-            Ok(e) => !matches!(e.get_password(), Err(keyring::Error::NoEntry)),
-            Err(_) => false,
+    /// Три состояния, а не два: `Ok(true)` - сид есть, `Ok(false)` - его точно
+    /// нет (NoEntry), `Err` - хранилище ключей недоступно (связка залочена, не
+    /// запущен Secret Service). Раньше последнее сливалось с «сид есть», и вход
+    /// упирался в невнятную ошибку вместо понятной подсказки.
+    pub fn has_seed(&self) -> Result<bool, String> {
+        let e = Self::entry()?;
+        match e.get_password() {
+            Ok(_) => Ok(true),
+            Err(keyring::Error::NoEntry) => Ok(false),
+            Err(err) => Err(format!(
+                "хранилище ключей недоступно: {err}. Разблокируйте связку ключей (Secret Service / Keychain) и повторите."
+            )),
         }
     }
 

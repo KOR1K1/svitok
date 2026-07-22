@@ -15,6 +15,25 @@ use tauri::{Manager, State};
 
 // ---------- ответы наружу ----------
 
+/// Строка-секрет, уходящая наружу через IPC (пароль, бумажный сид). На проводе -
+/// обычная строка, но свою Rust-копию она затирает, когда Tauri, отсериализовав
+/// ответ, дропает структуру. Внутренний JSON-буфер самого Tauri вне нашего
+/// контроля - это остаточный риск webview-моста, он закрывается только уходом от
+/// моста (native messaging на десктопе, autofill на Android).
+pub struct SecretString(pub String);
+
+impl serde::Serialize for SecretString {
+    fn serialize<S: serde::Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        self.0.serialize(s)
+    }
+}
+
+impl Drop for SecretString {
+    fn drop(&mut self) {
+        svitok_core::wipe::wipe_str(&mut self.0);
+    }
+}
+
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Status {
@@ -32,7 +51,7 @@ pub struct Unlocked {
 #[serde(rename_all = "camelCase")]
 pub struct NewVault {
     pub fingerprint: String,
-    pub seed_paper: Vec<String>,
+    pub seed_paper: Vec<SecretString>,
 }
 
 #[derive(Serialize)]
@@ -49,7 +68,7 @@ pub struct PasswordView {
     pub name: String,
     pub login: String,
     pub counter: u32,
-    pub password: String,
+    pub password: SecretString,
 }
 
 #[derive(Serialize)]
@@ -215,7 +234,7 @@ pub async fn create_vault(
 
     Ok(NewVault {
         fingerprint: String::from_utf8_lossy(&fp).to_string(),
-        seed_paper,
+        seed_paper: seed_paper.into_iter().map(SecretString).collect(),
     })
 }
 
@@ -488,7 +507,7 @@ pub async fn show_seed(
     app: tauri::AppHandle,
     state: State<'_, AppState>,
     phrase: String,
-) -> Result<Vec<String>, String> {
+) -> Result<Vec<SecretString>, String> {
     require_key(&state)?;
     let dir = dir_of(&app)?;
     let store = if Store::exists(&dir) { Some(Store::load(&dir)?) } else { None };
@@ -517,7 +536,7 @@ pub async fn show_seed(
 
     let paper = svitok_core::base32::to_paper(&seed);
     svitok_core::wipe::wipe(&mut seed);
-    Ok(paper)
+    Ok(paper.into_iter().map(SecretString).collect())
 }
 
 #[tauri::command]
@@ -536,7 +555,7 @@ pub fn derive_password(
         name: s.name.clone(),
         login: s.login.clone(),
         counter: s.counter,
-        password,
+        password: SecretString(password),
     })
 }
 
