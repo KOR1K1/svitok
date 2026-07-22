@@ -1,0 +1,14 @@
+[package]
+name = "svitok-host"
+version = "0.1.0"
+edition = "2021"
+description = "Свиток — native messaging host для браузерного расширения"
+
+[[bin]]
+name = "svitok-host"
+path = "src/main.rs"
+
+# interprocess даёт локальный сокет одинаково на Windows (named pipe) и unix.
+# Хост - тонкий недоверенный релей, ядро и секреты сюда не тянем.
+[dependencies]
+interprocess = "2"

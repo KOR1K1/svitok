@@ -59,5 +59,6 @@ export const api = {
   syncExport: () => invoke<string>("sync_export"),
   syncPreview: (data: string) => invoke<SyncPreview>("sync_preview", { data }),
   syncImport: (data: string, overwrite: boolean) => invoke<number>("sync_import", { data, overwrite }),
+  autofillToken: () => invoke<string>("autofill_token"),
   paperExport: () => invoke<Paper>("paper_export"),
 };

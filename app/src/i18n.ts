@@ -115,6 +115,10 @@ const ru: Dict = {
   "showseed.revealing": "Проверяю…",
   "showseed.needPhrase": "Введите фразу",
   "settings.showSeed": "Показать сид",
+  "settings.extension": "Расширение браузера",
+  "ext.title": "Расширение браузера",
+  "ext.hint": "Скопируйте этот токен и вставьте его в настройки расширения Свитка в браузере. Токен связывает расширение с приложением; храните его как секрет.",
+  "ext.copy": "Копировать токен",
 
   "addtotp.title": "TOTP-секрет",
   "addtotp.labelPh": "Метка (напр. github)",
@@ -351,6 +355,10 @@ const en: Dict = {
   "showseed.reveal": "Show seed",
   "showseed.revealing": "Checking…",
   "showseed.needPhrase": "Enter the phrase",
+  "settings.extension": "Browser extension",
+  "ext.title": "Browser extension",
+  "ext.hint": "Copy this token and paste it into the Svitok extension's options in your browser. It pairs the extension with the app; keep it secret.",
+  "ext.copy": "Copy token",
   "settings.showSeed": "Show seed",
 
   "addtotp.title": "TOTP secret",

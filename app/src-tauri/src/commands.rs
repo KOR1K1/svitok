@@ -973,6 +973,23 @@ pub fn sync_import(app: tauri::AppHandle, state: State<AppState>, data: String, 
     Ok(changed)
 }
 
+/// Токен связки для браузерного расширения (десктоп). Показывается в настройках,
+/// пользователь один раз копирует его в расширение - это и есть подтверждение.
+#[tauri::command]
+pub fn autofill_token(app: tauri::AppHandle, state: State<AppState>) -> Result<String, String> {
+    require_key(&state)?;
+    #[cfg(not(any(target_os = "android", target_os = "ios")))]
+    {
+        let dir = dir_of(&app)?;
+        crate::ipc_server::get_or_create_token(&dir)
+    }
+    #[cfg(any(target_os = "android", target_os = "ios"))]
+    {
+        let _ = app;
+        Err("автозаполнение через расширение - только на десктопе".into())
+    }
+}
+
 #[tauri::command]
 pub fn paper_export(app: tauri::AppHandle, state: State<AppState>) -> Result<Paper, String> {
     require_key(&state)?;

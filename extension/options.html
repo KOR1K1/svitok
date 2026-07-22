@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="ru">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Свиток</title>
+    <style>
+      body {
+        margin: 0;
+        padding: 20px;
+        width: 300px;
+        background: #141210;
+        color: #ede7de;
+        font-family: system-ui, sans-serif;
+      }
+      h1 { font-size: 18px; margin: 0 0 6px; }
+      p { color: #8a8178; font-size: 13px; line-height: 1.5; margin: 0 0 14px; }
+      input {
+        width: 100%;
+        box-sizing: border-box;
+        padding: 10px 12px;
+        background: #26211b;
+        border: 1px solid #2e2822;
+        border-radius: 10px;
+        color: #ede7de;
+        font-size: 14px;
+        outline: none;
+      }
+      input:focus { border-color: #d4643e; }
+      button {
+        margin-top: 10px;
+        width: 100%;
+        padding: 10px;
+        background: #d4643e;
+        color: #1a0f08;
+        border: none;
+        border-radius: 10px;
+        font-size: 15px;
+        font-weight: 600;
+        cursor: pointer;
+      }
+      #status { margin-top: 10px; font-size: 13px; color: #8fa968; min-height: 18px; }
+    </style>
+  </head>
+  <body>
+    <h1>Свиток</h1>
+    <p>Вставьте токен связки из приложения: Настройки → Расширение браузера.</p>
+    <input id="token" type="text" placeholder="токен связки" autocomplete="off" />
+    <button id="save">Сохранить</button>
+    <div id="status"></div>
+    <script src="options.js"></script>
+  </body>
+</html>

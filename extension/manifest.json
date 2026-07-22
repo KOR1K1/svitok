@@ -1,0 +1,20 @@
+{
+  "manifest_version": 3,
+  "name": "Свиток",
+  "version": "0.1.0",
+  "description": "Автозаполнение паролей из Свитка. Пароли не хранятся, а выводятся приложением по запросу.",
+  "permissions": ["nativeMessaging", "storage", "activeTab"],
+  "background": { "service_worker": "background.js" },
+  "content_scripts": [
+    {
+      "matches": ["http://*/*", "https://*/*"],
+      "js": ["content.js"],
+      "css": ["content.css"],
+      "run_at": "document_idle",
+      "all_frames": true
+    }
+  ],
+  "options_page": "options.html",
+  "action": { "default_popup": "options.html", "default_title": "Свиток" },
+  "icons": { "48": "icon48.png", "128": "icon128.png" }
+}

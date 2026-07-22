@@ -1,0 +1,26 @@
+/* Выпадашка автозаполнения - в палитре Свитка. */
+.svitok-af {
+  position: absolute;
+  z-index: 2147483647;
+  background: #1c1916;
+  border: 1px solid #2e2822;
+  border-radius: 12px;
+  overflow: hidden;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
+  font-family: system-ui, sans-serif;
+}
+.svitok-af__row {
+  padding: 10px 14px;
+  color: #ede7de;
+  font-size: 14px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.svitok-af__row:hover {
+  background: #26211b;
+}
+.svitok-af__note {
+  padding: 10px 14px;
+  color: #8a8178;
+  font-size: 13px;
+}

@@ -2,6 +2,8 @@
 //! Мастер-ключ держим тут, в Rust-состоянии. В JS через мост он не уходит.
 
 mod commands;
+#[cfg(not(any(target_os = "android", target_os = "ios")))]
+mod ipc_server;
 #[cfg(target_os = "android")]
 mod jni_autofill;
 mod seed;
@@ -93,6 +95,9 @@ pub fn run() {
                     }
                 }
             }
+            // локальный сокет для автозаполнения через браузерное расширение
+            #[cfg(not(any(target_os = "android", target_os = "ios")))]
+            ipc_server::start(_app.handle().clone());
             Ok(())
         })
         .manage(Mutex::new(Inner { master_key: None, dir: PathBuf::new() }))
@@ -127,6 +132,7 @@ pub fn run() {
             commands::sync_export,
             commands::sync_preview,
             commands::sync_import,
+            commands::autofill_token,
             commands::paper_export
         ])
         .run(tauri::generate_context!())

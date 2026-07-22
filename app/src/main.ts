@@ -240,6 +240,7 @@ function settingsBody(refresh: () => void): HTMLElement[] {
       vaultAddBtn(t("settings.backup"), () => sheetBackup(), icons.save()),
       vaultAddBtn(t("settings.sync"), () => sheetSync(), icons.qr()),
       vaultAddBtn(t("settings.showSeed"), () => sheetShowSeed(), icons.doc()),
+      ...(IS_MOBILE ? [] : [vaultAddBtn(t("settings.extension"), () => sheetExtension(), icons.doc())]),
     ]),
     h("div.stack.gap-3", {}, [h("div.t-section", {}, [t("settings.interface")]), ...interfaceRows]),
     h("div.stack.gap-2", {}, [
@@ -1616,6 +1617,32 @@ function sheetShowSeed() {
       err,
     ]);
   }, leaveSensitive);
+}
+
+/** Токен связки для браузерного расширения (только десктоп). */
+function sheetExtension() {
+  openSheet(() => {
+    const err = h("div.t-body-2.err", { style: "min-height:18px" });
+    const box = h("div.t-secret.selectable.mono", { style: "word-break:break-all" }, ["…"]);
+    const copy = h("button.btn.btn--seal.btn--full", {}, [t("ext.copy")]);
+    api.autofillToken()
+      .then((tok) => {
+        box.textContent = tok;
+        copy.addEventListener("click", async () => {
+          await copyToClipboard(tok).catch(() => {});
+          toast(t("tools.copied"), "ok");
+          haptic("confirm");
+        });
+      })
+      .catch((e) => { err.textContent = String(e); });
+    return h("div.stack.gap-3", {}, [
+      h("div.t-title", {}, [t("ext.title")]),
+      h("div.t-body-2", { style: "line-height:1.6" }, [t("ext.hint")]),
+      box,
+      copy,
+      err,
+    ]);
+  });
 }
 
 boot();
