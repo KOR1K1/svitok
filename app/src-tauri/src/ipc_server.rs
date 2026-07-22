@@ -11,9 +11,14 @@ use crate::AppState;
 use interprocess::local_socket::{prelude::*, GenericNamespaced, ListenerOptions, Stream, ToNsName};
 use std::io::{self, Read, Write};
 use std::path::{Path, PathBuf};
+use std::time::Duration;
 use svitok_common::store::Store;
 use svitok_core::derive::site_password;
 use tauri::Manager;
+
+// сколько ждём разблокировки после того, как по locked-запросу подняли окно
+const UNLOCK_WAIT: Duration = Duration::from_secs(90);
+const POLL: Duration = Duration::from_millis(200);
 
 const SOCKET_NAME: &str = "svitok-autofill.sock";
 const MAX_MSG: usize = 1024 * 1024;
@@ -53,32 +58,42 @@ fn process(app: &tauri::AppHandle, req: &[u8]) -> Vec<u8> {
     };
     match v.get("op").and_then(|x| x.as_str()).unwrap_or("") {
         "ping" => br#"{"ok":true}"#.to_vec(),
+        "match" => do_match(app, &v),
         "fill" => fill(app, &v),
         _ => err("unknown-op"),
     }
 }
 
+/// Лёгкий «пик» по фокусу поля: отдаём имена/логины совпадений и флаг locked -
+/// без деривации, поэтому работает и на заблокированном ваулте. Пароля тут нет.
+fn do_match(app: &tauri::AppHandle, v: &serde_json::Value) -> Vec<u8> {
+    let (dir, canon) = match precheck(app, v) {
+        Ok(x) => x,
+        Err(e) => return e,
+    };
+    let store = match Store::load(&dir) {
+        Ok(s) => s,
+        Err(_) => return err("no-store"),
+    };
+    let matches: Vec<_> = store
+        .sites
+        .iter()
+        .filter(|s| svitok_core::domain::canonical(&s.name).as_deref() == Some(canon.as_str()))
+        .map(|s| serde_json::json!({ "name": s.name, "login": s.login }))
+        .collect();
+    let locked = current_key(app).is_none();
+    serde_json::json!({ "ok": true, "locked": locked, "matches": matches }).to_string().into_bytes()
+}
+
+/// Заполнение по клику: если заблокировано - поднимаем окно и ждём разблокировки,
+/// потом деривируем пароль тем же запросом (без повторного клика в браузере).
 fn fill(app: &tauri::AppHandle, v: &serde_json::Value) -> Vec<u8> {
-    let dir = match app.path().app_data_dir() {
-        Ok(d) => d,
-        Err(_) => return err("no-dir"),
+    let (dir, canon) = match precheck(app, v) {
+        Ok(x) => x,
+        Err(e) => return e,
     };
-    let token = v.get("token").and_then(|x| x.as_str()).unwrap_or("");
-    if !token_ok(&dir, token) {
-        return err("unpaired");
-    }
-    let origin = v.get("origin").and_then(|x| x.as_str()).unwrap_or("");
-    let canon = match svitok_core::domain::canonical(origin) {
-        Some(c) => c,
-        None => return err("bad-origin"),
-    };
-    // копия ключа из состояния; если заблокировано - просим разблокировать GUI
-    let mk = {
-        let g = app.state::<AppState>();
-        let guard = g.lock().unwrap_or_else(|p| p.into_inner());
-        guard.master_key.as_ref().map(|lk| *lk.get())
-    };
-    let mut mk = match mk {
+    let only = v.get("name").and_then(|x| x.as_str());
+    let mut mk = match key_or_wait(app) {
         Some(k) => k,
         None => return err("locked"),
     };
@@ -91,18 +106,59 @@ fn fill(app: &tauri::AppHandle, v: &serde_json::Value) -> Vec<u8> {
     };
     let mut matches = Vec::new();
     for s in &store.sites {
-        if svitok_core::domain::canonical(&s.name).as_deref() == Some(canon.as_str()) {
-            if let Some(pw) = site_password(&mk, &s.name, &s.login, s.counter, &s.policy) {
-                matches.push(serde_json::json!({
-                    "name": s.name,
-                    "login": s.login,
-                    "password": pw,
-                }));
+        if svitok_core::domain::canonical(&s.name).as_deref() != Some(canon.as_str()) {
+            continue;
+        }
+        if let Some(name) = only {
+            if s.name != name {
+                continue;
             }
+        }
+        if let Some(pw) = site_password(&mk, &s.name, &s.login, s.counter, &s.policy) {
+            matches.push(serde_json::json!({ "name": s.name, "login": s.login, "password": pw }));
         }
     }
     svitok_core::wipe::wipe(&mut mk);
     serde_json::json!({ "ok": true, "matches": matches }).to_string().into_bytes()
+}
+
+/// Общая проверка: токен + канонический домен. Возвращает (dir, canon) или ошибку.
+fn precheck(app: &tauri::AppHandle, v: &serde_json::Value) -> Result<(PathBuf, String), Vec<u8>> {
+    let dir = app.path().app_data_dir().map_err(|_| err("no-dir"))?;
+    let token = v.get("token").and_then(|x| x.as_str()).unwrap_or("");
+    if !token_ok(&dir, token) {
+        return Err(err("unpaired"));
+    }
+    let origin = v.get("origin").and_then(|x| x.as_str()).unwrap_or("");
+    let canon = svitok_core::domain::canonical(origin).ok_or_else(|| err("bad-origin"))?;
+    Ok((dir, canon))
+}
+
+fn current_key(app: &tauri::AppHandle) -> Option<[u8; 32]> {
+    let g = app.state::<AppState>();
+    let guard = g.lock().unwrap_or_else(|p| p.into_inner());
+    guard.master_key.as_ref().map(|lk| *lk.get())
+}
+
+/// Ключ сейчас или, если заблокировано, поднимаем окно и ждём, пока пользователь
+/// введёт фразу (до UNLOCK_WAIT). None - не дождались.
+fn key_or_wait(app: &tauri::AppHandle) -> Option<[u8; 32]> {
+    if let Some(k) = current_key(app) {
+        return Some(k);
+    }
+    if let Some(win) = app.get_webview_window("main") {
+        let _ = win.unminimize();
+        let _ = win.show();
+        let _ = win.set_focus();
+    }
+    let steps = (UNLOCK_WAIT.as_millis() / POLL.as_millis()) as u32;
+    for _ in 0..steps {
+        std::thread::sleep(POLL);
+        if let Some(k) = current_key(app) {
+            return Some(k);
+        }
+    }
+    None
 }
 
 fn err(code: &str) -> Vec<u8> {

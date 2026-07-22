@@ -1,26 +1,42 @@
-/* Выпадашка автозаполнения - в палитре Свитка. */
+/* Выпадашка автозаполнения - в палитре и шрифте Свитка. */
+@font-face {
+  font-family: "Golos";
+  src: url("golos.ttf");
+  font-weight: 400 700;
+}
 .svitok-af {
   position: absolute;
   z-index: 2147483647;
+  padding: 4px;
   background: #1c1916;
   border: 1px solid #2e2822;
-  border-radius: 12px;
+  border-radius: 14px;
   overflow: hidden;
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
-  font-family: system-ui, sans-serif;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.55);
+  font-family: "Golos", system-ui, sans-serif;
 }
 .svitok-af__row {
-  padding: 10px 14px;
-  color: #ede7de;
-  font-size: 14px;
+  padding: 9px 12px;
+  border-radius: 10px;
   cursor: pointer;
-  white-space: nowrap;
 }
 .svitok-af__row:hover {
   background: #26211b;
 }
+.svitok-af__name {
+  color: #ede7de;
+  font-size: 14px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+.svitok-af__login {
+  color: #8a8178;
+  font-size: 12px;
+  margin-top: 2px;
+  white-space: nowrap;
+}
 .svitok-af__note {
-  padding: 10px 14px;
+  padding: 9px 12px;
   color: #8a8178;
   font-size: 13px;
 }

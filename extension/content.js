@@ -1,6 +1,8 @@
-// Находит поля логина/пароля, при фокусе спрашивает у приложения совпадения для
-// текущего origin и показывает выпадашку. Клик подставляет логин и пароль.
-// Пароль приходит уже выведенным из приложения - расширение его только вставляет.
+// Находит поля логина/пароля. По фокусу спрашивает у приложения совпадения
+// (op:"match" - лёгкий пик, работает и на заблокированном ваулте). По клику
+// шлёт op:"fill": если Свиток заблокирован, приложение всплывёт и подождёт
+// ввода фразы, после чего тем же запросом вернёт пароль - и поля заполнятся
+// без повторных действий.
 (() => {
   const origin = location.origin;
   let dropdown = null;
@@ -37,13 +39,14 @@
     el.dispatchEvent(new Event("change", { bubbles: true }));
   }
 
-  function fillMatch(m) {
+  function fillFields(m) {
     if (m.login) {
       const user = usernameInputs()[0];
       if (user) setValue(user, m.login);
     }
-    for (const p of passwordInputs()) setValue(p, m.password);
-    removeDropdown();
+    if (m.password) {
+      for (const p of passwordInputs()) setValue(p, m.password);
+    }
   }
 
   function removeDropdown() {
@@ -53,48 +56,97 @@
     }
   }
 
-  function showDropdown(field, items, note) {
+  function baseBox(field) {
     removeDropdown();
     const r = field.getBoundingClientRect();
     dropdown = document.createElement("div");
     dropdown.className = "svitok-af";
     dropdown.style.left = window.scrollX + r.left + "px";
-    dropdown.style.top = window.scrollY + r.bottom + 4 + "px";
-    dropdown.style.minWidth = Math.max(r.width, 220) + "px";
-    if (note) {
-      const n = document.createElement("div");
-      n.className = "svitok-af__note";
-      n.textContent = note;
-      dropdown.appendChild(n);
-    }
+    dropdown.style.top = "-9999px"; // до замера высоты
+    dropdown.style.minWidth = Math.max(r.width, 240) + "px";
+    dropdown._rect = r;
+    return dropdown;
+  }
+
+  // Рисуем над полем, если сверху есть место: гугловская выпадашка всегда снизу,
+  // так мы с ней не пересекаемся. Места нет - падаем под поле.
+  function place(box) {
+    document.body.appendChild(box);
+    const r = box._rect;
+    const hgt = box.offsetHeight;
+    box.style.top =
+      (r.top > hgt + 8 ? window.scrollY + r.top - hgt - 4 : window.scrollY + r.bottom + 4) + "px";
+  }
+
+  function note(field, text) {
+    const box = baseBox(field);
+    const n = document.createElement("div");
+    n.className = "svitok-af__note";
+    n.textContent = text;
+    box.appendChild(n);
+    place(box);
+  }
+
+  function showMatches(field, items, locked) {
+    const box = baseBox(field);
     for (const m of items) {
       const row = document.createElement("div");
       row.className = "svitok-af__row";
-      row.textContent = "Свиток · " + m.name + (m.login ? " (" + m.login + ")" : "");
+      const title = document.createElement("div");
+      title.className = "svitok-af__name";
+      title.textContent = "Свиток · " + m.name;
+      row.appendChild(title);
+      if (m.login) {
+        const sub = document.createElement("div");
+        sub.className = "svitok-af__login";
+        sub.textContent = m.login;
+        row.appendChild(sub);
+      }
       row.addEventListener("mousedown", (e) => {
         e.preventDefault();
-        fillMatch(m);
+        choose(field, m, locked);
       });
-      dropdown.appendChild(row);
+      box.appendChild(row);
     }
-    document.body.appendChild(dropdown);
+    if (locked) {
+      const n = document.createElement("div");
+      n.className = "svitok-af__note";
+      n.textContent = "Свиток заблокирован - откроется при выборе";
+      box.appendChild(n);
+    }
+    place(box);
+  }
+
+  async function choose(field, m, locked) {
+    note(field, locked ? "Разблокируйте Свиток…" : "Заполняю…");
+    let resp;
+    try {
+      resp = await chrome.runtime.sendMessage({ op: "fill", origin, name: m.name });
+    } catch {
+      removeDropdown();
+      return;
+    }
+    if (resp && resp.ok && resp.matches && resp.matches.length) {
+      fillFields(resp.matches[0]);
+      removeDropdown();
+    } else {
+      note(field, "Свиток: " + (resp && resp.error ? resp.error : "не вышло"));
+      setTimeout(removeDropdown, 2500);
+    }
   }
 
   async function onFocus(field) {
     lastField = field;
     let resp;
     try {
-      resp = await chrome.runtime.sendMessage({ op: "fill", origin });
+      resp = await chrome.runtime.sendMessage({ op: "match", origin });
     } catch {
-      return;
+      return; // старый content script после reload - молчим
     }
-    if (field !== lastField || !resp) return;
-    if (resp.ok && resp.matches && resp.matches.length) {
-      showDropdown(field, resp.matches, null);
-    } else if (!resp.ok && resp.error === "locked") {
-      showDropdown(field, [], "Разблокируйте Свиток");
+    if (field !== lastField || !resp || !resp.ok) return;
+    if (resp.matches && resp.matches.length) {
+      showMatches(field, resp.matches, !!resp.locked);
     }
-    // host-missing / unpaired / no match - молчим, чтобы не мешать
   }
 
   document.addEventListener("focusin", (e) => {

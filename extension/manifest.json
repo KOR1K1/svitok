@@ -16,5 +16,8 @@
   ],
   "options_page": "options.html",
   "action": { "default_popup": "options.html", "default_title": "Свиток" },
-  "icons": { "48": "icon48.png", "128": "icon128.png" }
+  "icons": { "48": "icon48.png", "128": "icon128.png" },
+  "web_accessible_resources": [
+    { "resources": ["golos.ttf"], "matches": ["http://*/*", "https://*/*"] }
+  ]
 }
