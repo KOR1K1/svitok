@@ -5,6 +5,7 @@
 
 use crate::AppState;
 use serde::Serialize;
+use svitok_common::lockmem::LockedKey;
 use svitok_common::osrng::{generate_seed, os_random};
 use svitok_common::store::{Site, Store};
 use svitok_core::derive::{site_password, Policy};
@@ -117,11 +118,15 @@ impl Drop for MkGuard {
 }
 
 fn require_key(state: &AppState) -> Result<MkGuard, String> {
-    // не паникуем, если мьютекс отравлен предыдущей паникой под замком
+    // не паникуем, если мьютекс отравлен предыдущей паникой под замком.
+    // Берём копию запертого ключа в guard - она короткоживущая и затрётся при
+    // выходе из команды; сам запертый оригинал остаётся в состоянии.
     let k = state
         .lock()
         .unwrap_or_else(|p| p.into_inner())
         .master_key
+        .as_ref()
+        .map(|lk| *lk.get())
         .ok_or_else(|| "заблокировано".to_string())?;
     Ok(MkGuard(k))
 }
@@ -205,7 +210,7 @@ pub async fn create_vault(
     store.save()?;
     let fp = fingerprint(&mk);
     let mut g = state.lock().unwrap_or_else(|p| p.into_inner());
-    g.master_key = Some(mk);
+    g.master_key = Some(LockedKey::new(mk));
     g.dir = dir;
 
     Ok(NewVault {
@@ -302,7 +307,7 @@ pub async fn restore_vault(
     store.save()?;
     let fp = fingerprint(&mk);
     let mut g = state.lock().unwrap_or_else(|p| p.into_inner());
-    g.master_key = Some(mk);
+    g.master_key = Some(LockedKey::new(mk));
     g.dir = dir;
     Ok(Unlocked { fingerprint: String::from_utf8_lossy(&fp).to_string() })
 }
@@ -346,7 +351,7 @@ pub async fn unlock(
 
     let fp = fingerprint(&mk);
     let mut g = state.lock().unwrap_or_else(|p| p.into_inner());
-    g.master_key = Some(mk);
+    g.master_key = Some(LockedKey::new(mk));
     g.dir = dir;
     Ok(Unlocked { fingerprint: String::from_utf8_lossy(&fp).to_string() })
 }
@@ -354,9 +359,7 @@ pub async fn unlock(
 #[tauri::command]
 pub fn lock(state: State<AppState>) {
     let mut g = state.lock().unwrap_or_else(|p| p.into_inner());
-    if let Some(mut mk) = g.master_key.take() {
-        svitok_core::wipe::wipe(&mut mk);
-    }
+    g.master_key = None; // Drop у LockedKey затирает ключ и снимает блокировку RAM
 }
 
 /// Полностью стереть Свиток: сид из хранилища плюс файлы списка и сейфа.
@@ -369,9 +372,7 @@ pub fn destroy_vault(app: tauri::AppHandle, state: State<AppState>) -> Result<()
     let dir = dir_of(&app)?;
     {
         let mut g = state.lock().unwrap_or_else(|p| p.into_inner());
-        if let Some(mut mk) = g.master_key.take() {
-            svitok_core::wipe::wipe(&mut mk);
-        }
+        g.master_key = None; // Drop у LockedKey затирает ключ и снимает блокировку RAM
     }
     crate::seed::clear_seed(&app, &dir)?;
     let _ = std::fs::remove_file(Store::sites_path(&dir));
@@ -752,7 +753,13 @@ pub fn clip_copy(app: tauri::AppHandle, state: State<AppState>, text: String) ->
         let _: serde_json::Value = p.0.run_mobile_plugin("copyClip", A { text }).map_err(|e| e.to_string())?;
         Ok(())
     }
-    #[cfg(not(target_os = "android"))]
+    #[cfg(target_os = "windows")]
+    {
+        // на Windows исключаем пароль из истории буфера и облачного буфера
+        let _ = app;
+        crate::winclip::copy_excluded(&text)
+    }
+    #[cfg(all(not(target_os = "android"), not(target_os = "windows")))]
     {
         use tauri_plugin_clipboard_manager::ClipboardExt;
         app.clipboard().write_text(text).map_err(|e| e.to_string())

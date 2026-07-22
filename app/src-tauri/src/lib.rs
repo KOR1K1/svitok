@@ -5,6 +5,8 @@ mod commands;
 mod seed;
 #[cfg(not(any(target_os = "android", target_os = "ios")))]
 mod seedstore;
+#[cfg(windows)]
+mod winclip;
 
 use std::path::PathBuf;
 use std::sync::Mutex;
@@ -58,19 +60,12 @@ fn init_seed_plugin() -> tauri::plugin::TauriPlugin<tauri::Wry> {
         .build()
 }
 
-/// Разблокированное состояние. `master_key` затирается при Drop (когда
-/// приложение закрывается) и по команде lock.
+/// Разблокированное состояние. Мастер-ключ лежит в LockedKey: заперт в RAM
+/// (не уходит в своп) и затирается при Drop - когда приложение закрывается
+/// или по команде lock.
 pub struct Inner {
-    pub master_key: Option<[u8; 32]>,
+    pub master_key: Option<svitok_common::lockmem::LockedKey>,
     pub dir: PathBuf,
-}
-
-impl Drop for Inner {
-    fn drop(&mut self) {
-        if let Some(mut mk) = self.master_key.take() {
-            svitok_core::wipe::wipe(&mut mk);
-        }
-    }
 }
 
 pub type AppState = Mutex<Inner>;

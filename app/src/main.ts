@@ -36,6 +36,19 @@ function applyScreenProtectPref() {
   api.setScreenProtection(!off).catch(() => {});
 }
 
+// Сид и пароль - краун-джуелы: их экраны всегда под защитой от захвата, даже
+// если пользователь выключил защиту в настройках. Считаем вложенность, чтобы
+// закрытие подлиста (QR, крупный шрифт) не вернуло настройку раньше времени.
+let sensitiveDepth = 0;
+function enterSensitive() {
+  sensitiveDepth++;
+  if (sensitiveDepth === 1) api.setScreenProtection(true).catch(() => {});
+}
+function leaveSensitive() {
+  sensitiveDepth = Math.max(0, sensitiveDepth - 1);
+  if (sensitiveDepth === 0) applyScreenProtectPref();
+}
+
 // Заголовок окна на десктопе следует за языком: в тайтлбаре «Свиток» или «Svitok».
 async function syncWindowTitle() {
   if (IS_MOBILE) return;
@@ -1194,7 +1207,7 @@ function vaultAddBtn(label: string, onClick: () => void, icon?: SVGElement): HTM
 // Стек открытых листов нужен для аппаратной кнопки «назад» на Android.
 const sheetStack: (() => void)[] = [];
 
-function openSheet(build: (close: () => void) => HTMLElement) {
+function openSheet(build: (close: () => void) => HTMLElement, onClose?: () => void) {
   const desktop = !IS_MOBILE;
   const scrim = h("div.scrim");
   const sheet = h(desktop ? "div.modal" : "div.sheet");
@@ -1212,6 +1225,7 @@ function openSheet(build: (close: () => void) => HTMLElement) {
       sheet.style.transform = "translateY(100%)";
     }
     setTimeout(() => { scrim.remove(); sheet.remove(); }, 320);
+    onClose?.();
   };
   sheetStack.push(close);
 
@@ -1303,6 +1317,7 @@ let screenBack: (() => void) | null = null;
 function isMainScreen() { return mainScreenActive; }
 
 function sheetPassword(s: SiteView, refresh: () => void) {
+  enterSensitive();
   openSheet((close) => {
     let clearTimer = 0;
     const dots = "•".repeat(Math.min(s.length, 20));
@@ -1369,7 +1384,7 @@ function sheetPassword(s: SiteView, refresh: () => void) {
       h("div", { style: "display:flex;gap:8px" }, [bigBtn, qrBtn]),
       h("div", { style: "display:flex;gap:8px" }, [bumpBtn, editBtn]),
     ]);
-  });
+  }, leaveSensitive);
 }
 
 function sheetLargeType(pw: string) {
@@ -1569,6 +1584,7 @@ async function sheetPaper() {
  * фразу: без этого молчаливый вызов из JS мог бы выгрузить сид. На Android к
  * тому же чтение сида идёт под биометрией. */
 function sheetShowSeed() {
+  enterSensitive();
   openSheet(() => {
     const box = h("div.paper");
     const err = h("div.t-body-2.err", { style: "min-height:20px" });
@@ -1599,7 +1615,7 @@ function sheetShowSeed() {
       box,
       err,
     ]);
-  });
+  }, leaveSensitive);
 }
 
 boot();
