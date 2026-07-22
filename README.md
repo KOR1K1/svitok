@@ -210,7 +210,7 @@ Good places to poke, audit, or contribute:
 - **Desktop clipboard on Windows** - passwords still land in clipboard history / Cloud Clipboard; excluding them needs a proper native path (the Android side already marks them sensitive).
 - **F-Droid metadata**, more languages, an animated multi-frame QR mode for very large lists.
 
-Open an issue before a big change so we don't both build the same thing two different ways.
+Open an issue before a big change so we don't both build the same thing two different ways. For where the project is headed, see the [roadmap](ROADMAP.md).
 
 ## Security
 
