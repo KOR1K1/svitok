@@ -40,3 +40,4 @@ docs/android-tauri-research.md
 .idea/
 .DS_Store
 Thumbs.db
+psl.dat
