@@ -43,8 +43,14 @@ impl KdfParams {
 
 /// Мастер-ключ из сида (он на листке) и мастер-фразы (она в голове).
 pub fn master_key(seed: &[u8], phrase: &[u8], p: KdfParams) -> [u8; 32] {
-    let n_blocks: usize = 1usize << p.m_log2;
-    let t_iters: u64 = 1u64 << p.t_log2;
+    // Потолки те же, что в parse(). Поля KdfParams публичны, так что структуру
+    // можно собрать напрямую в обход parse - без этого клампа m_log2>=64 дал бы
+    // UB/панику сдвига, огромный M - OOM, а M>32 усёк бы mask и сломал выбор j.
+    // Для нормальных параметров (M<=25) это ничего не меняет.
+    let m_log2 = p.m_log2.min(25);
+    let t_log2 = p.t_log2.min(28);
+    let n_blocks: usize = 1usize << m_log2;
+    let t_iters: u64 = 1u64 << t_log2;
 
     let mut x = b2s(
         &[],

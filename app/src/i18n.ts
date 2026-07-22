@@ -110,6 +110,10 @@ const ru: Dict = {
 
   "showseed.title": "Сид (для листка)",
   "showseed.hint": "Перепишите эти строки на бумагу и храните офлайн. Сид — половина ключа: вместе с фразой в голове он выводит все пароли. Никогда не фотографируйте и не храните в облаке.",
+  "showseed.phrasePh": "Повторите фразу",
+  "showseed.reveal": "Показать сид",
+  "showseed.revealing": "Проверяю…",
+  "showseed.needPhrase": "Введите фразу",
   "settings.showSeed": "Показать сид",
 
   "addtotp.title": "TOTP-секрет",
@@ -200,6 +204,11 @@ const ru: Dict = {
   "sync.scan": "Сканировать QR другого устройства",
   "sync.scanHint": "Наведи камеру на QR, показанный на другом устройстве.",
   "sync.imported": "Перенесено сайтов: {n}",
+  "sync.nothing": "В переносе нет новых сайтов",
+  "sync.willAdd": "Новых сайтов: {n}",
+  "sync.willUpdate": "Перезапишет существующие (сменит пароль): {names}",
+  "sync.applyBoth": "Добавить и перезаписать",
+  "sync.addOnly": "Только добавить новые",
 
   "tools.show": "Показать",
   "tools.hide": "Скрыть",
@@ -338,6 +347,10 @@ const en: Dict = {
 
   "showseed.title": "Seed (for the paper)",
   "showseed.hint": "Copy these lines onto paper and keep them offline. The seed is half the key: together with the phrase in your head it derives every password. Never photograph it or store it in the cloud.",
+  "showseed.phrasePh": "Repeat your phrase",
+  "showseed.reveal": "Show seed",
+  "showseed.revealing": "Checking…",
+  "showseed.needPhrase": "Enter the phrase",
   "settings.showSeed": "Show seed",
 
   "addtotp.title": "TOTP secret",
@@ -428,6 +441,11 @@ const en: Dict = {
   "sync.scan": "Scan another device's QR",
   "sync.scanHint": "Point the camera at the QR shown on the other device.",
   "sync.imported": "Transferred {n} sites",
+  "sync.nothing": "Nothing new to import",
+  "sync.willAdd": "New sites: {n}",
+  "sync.willUpdate": "Will overwrite existing (changes the password): {names}",
+  "sync.applyBoth": "Add and overwrite",
+  "sync.addOnly": "Add new only",
 
   "tools.show": "Show",
   "tools.hide": "Hide",

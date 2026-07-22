@@ -22,6 +22,7 @@ export interface PasswordView { name: string; login: string; counter: number; pa
 export interface EntryView { kind: string; label: string; }
 export interface TotpView { label: string; code: string; digits: number; secondsLeft: number; period: number; }
 export interface Paper { kdf: string; sites: string[]; vault: string[]; }
+export interface SyncPreview { added: string[]; updated: string[]; }
 
 export const api = {
   status: () => invoke<Status>("status"),
@@ -38,7 +39,7 @@ export const api = {
   updateSite: (name: string, login: string, counter: number, length: number, classes: string, symbols: string | null) =>
     invoke<void>("update_site", { name, login, counter, length, classes, symbols }),
   removeSite: (name: string) => invoke<void>("remove_site", { name }),
-  showSeed: () => invoke<string[]>("show_seed"),
+  showSeed: (phrase: string) => invoke<string[]>("show_seed", { phrase }),
   derivePassword: (name: string) => invoke<PasswordView>("derive_password", { name }),
 
   vaultList: () => invoke<EntryView[]>("vault_list"),
@@ -56,6 +57,7 @@ export const api = {
   backupExport: () => invoke<string>("backup_export"),
   backupImport: (data: string) => invoke<number>("backup_import", { data }),
   syncExport: () => invoke<string>("sync_export"),
-  syncImport: (data: string) => invoke<number>("sync_import", { data }),
+  syncPreview: (data: string) => invoke<SyncPreview>("sync_preview", { data }),
+  syncImport: (data: string, overwrite: boolean) => invoke<number>("sync_import", { data, overwrite }),
   paperExport: () => invoke<Paper>("paper_export"),
 };

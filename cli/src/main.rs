@@ -262,7 +262,8 @@ fn cmd_pw(store: &Store, mk: &[u8; 32], args: &[String]) -> Result<(), String> {
         0 => Err(format!("{query} не найден (svitok ls)")),
         1 => {
             let s = found[0];
-            let pw = site_password(mk, &s.name, &s.login, s.counter, &s.policy);
+            let pw = site_password(mk, &s.name, &s.login, s.counter, &s.policy)
+                .ok_or("негодная политика пароля у этого сайта")?;
             println!("{}  v={}  {}", s.name, s.counter, if s.login.is_empty() { "" } else { &s.login });
             println!("{pw}");
             let _ = term::read_line("Enter — стереть с экрана... ");

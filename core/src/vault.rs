@@ -18,7 +18,7 @@
 use crate::blake2s::b2s;
 use crate::chacha20::xor_stream;
 use crate::kdf::subkey;
-use crate::wipe::{ct_eq, wipe};
+use crate::wipe::{ct_eq, wipe, wipe_str};
 use alloc::string::String;
 use alloc::vec::Vec;
 
@@ -28,6 +28,34 @@ pub enum Entry {
     Totp { label: String, secret: Vec<u8>, digits8: bool, period: u32 },
     Codes { label: String, codes: Vec<String> },
     Note { label: String, text: String },
+}
+
+// Расшифрованные записи держат в открытом виде TOTP-секреты, чужие пароли,
+// recovery-коды и заметки. По умолчанию Vec/String просто освободили бы память,
+// оставив эти байты в куче до переиспользования аллокатором - затираем сами.
+impl Drop for Entry {
+    fn drop(&mut self) {
+        match self {
+            Entry::Password { label, secret } => {
+                wipe_str(label);
+                wipe(secret);
+            }
+            Entry::Totp { label, secret, .. } => {
+                wipe_str(label);
+                wipe(secret);
+            }
+            Entry::Codes { label, codes } => {
+                wipe_str(label);
+                for c in codes {
+                    wipe_str(c);
+                }
+            }
+            Entry::Note { label, text } => {
+                wipe_str(label);
+                wipe_str(text);
+            }
+        }
+    }
 }
 
 impl Entry {
@@ -109,7 +137,9 @@ fn pack_bcd(codes: &[String]) -> Option<Vec<u8>> {
     if nibbles.len() % 2 == 1 {
         nibbles.push(0xF);
     }
-    Some(nibbles.chunks(2).map(|p| (p[0] << 4) | p[1]).collect())
+    let out: Vec<u8> = nibbles.chunks(2).map(|p| (p[0] << 4) | p[1]).collect();
+    wipe(&mut nibbles); // ниблы - это цифры recovery-кодов
+    Some(out)
 }
 
 fn unpack_bcd(data: &[u8]) -> Option<Vec<String>> {
@@ -132,7 +162,21 @@ fn unpack_bcd(data: &[u8]) -> Option<Vec<String>> {
 }
 
 pub fn serialize(entries: &[Entry]) -> Vec<u8> {
-    let mut out = Vec::new();
+    // Резервируем с запасом, чтобы буфер не реаллоцировался в процессе: иначе
+    // старые блоки с уже записанным открытым текстом освобождались бы без затирания.
+    // BCD-упаковка кодов меньше этой оценки, так что это верхняя граница.
+    let cap = 8 + entries
+        .iter()
+        .map(|e| {
+            8 + e.label().len()
+                + match e {
+                    Entry::Password { secret, .. } | Entry::Totp { secret, .. } => secret.len() + 8,
+                    Entry::Codes { codes, .. } => codes.iter().map(|c| c.len() + 1).sum::<usize>() + 8,
+                    Entry::Note { text, .. } => text.len() + 8,
+                }
+        })
+        .sum::<usize>();
+    let mut out = Vec::with_capacity(cap);
     out.push(0x01);
     put_varint(&mut out, entries.len() as u64);
     for e in entries {
@@ -162,8 +206,9 @@ pub fn serialize(entries: &[Entry]) -> Vec<u8> {
                     put_bytes(&mut out, &bcd);
                 } else {
                     out.push(0);
-                    let joined = codes.join("\n");
+                    let mut joined = codes.join("\n");
                     put_bytes(&mut out, joined.as_bytes());
+                    wipe_str(&mut joined); // склейка кодов - это секрет
                 }
             }
             Entry::Note { label, text } => {

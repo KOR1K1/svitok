@@ -84,14 +84,30 @@ impl Policy {
             v.push(DIGITS);
         }
         if self.symbols {
-            v.push(self.custom_symbols.as_deref().unwrap_or(SYMBOLS));
+            let sym = self.custom_symbols.as_deref().unwrap_or(SYMBOLS);
+            // пустой custom_symbols не должен попасть в набор: иначе в добивке
+            // классов словим next_mod(0) - деление на ноль в release
+            if !sym.is_empty() {
+                v.push(sym);
+            }
         }
         v
     }
 }
 
 /// Пароль для сайта. `site` и `login` должны быть точь-в-точь как в списке сайтов.
-pub fn site_password(mk: &[u8; 32], site: &str, login: &str, counter: u32, policy: &Policy) -> String {
+/// `None`, если политика негодная (пустой алфавит или длина вне 1..=128) - поля
+/// Policy публичны, так что структуру можно собрать напрямую в обход from_classes.
+pub fn site_password(mk: &[u8; 32], site: &str, login: &str, counter: u32, policy: &Policy) -> Option<String> {
+    let classes = policy.classes();
+    let mut alphabet: Vec<u8> = Vec::new();
+    for c in &classes {
+        alphabet.extend_from_slice(c);
+    }
+    if alphabet.is_empty() || policy.length == 0 || policy.length > 128 {
+        return None;
+    }
+
     let mut pw_key = subkey(mk, b"password");
     let sk = b2s(
         &pw_key,
@@ -106,18 +122,6 @@ pub fn site_password(mk: &[u8; 32], site: &str, login: &str, counter: u32, polic
     );
     crate::wipe::wipe(&mut pw_key);
     let mut stream = ByteStream::new(sk);
-
-    let classes = policy.classes();
-    let mut alphabet: Vec<u8> = Vec::new();
-    for c in &classes {
-        alphabet.extend_from_slice(c);
-    }
-
-    // from_classes такое не пропустит, но поля Policy публичны - подстрахуемся
-    // от прямого конструирования, чтобы не словить панику или вечный цикл
-    if alphabet.is_empty() || policy.length == 0 || policy.length > 128 {
-        return String::new();
-    }
 
     let mut pw: Vec<u8> = (0..policy.length)
         .map(|_| alphabet[stream.next_mod(alphabet.len())])
@@ -145,7 +149,7 @@ pub fn site_password(mk: &[u8; 32], site: &str, login: &str, counter: u32, polic
     }
 
     let s = String::from_utf8(pw).expect("алфавит - чистый ASCII");
-    s
+    Some(s)
 }
 
 #[cfg(test)]
@@ -159,8 +163,8 @@ mod tests {
     #[test]
     fn deterministic() {
         let p = Policy::default_luds();
-        let a = site_password(&mk(), "mega.nz", "me", 1, &p);
-        let b = site_password(&mk(), "mega.nz", "me", 1, &p);
+        let a = site_password(&mk(), "mega.nz", "me", 1, &p).unwrap();
+        let b = site_password(&mk(), "mega.nz", "me", 1, &p).unwrap();
         assert_eq!(a, b);
         assert_eq!(a.len(), 20);
     }
@@ -168,18 +172,28 @@ mod tests {
     #[test]
     fn inputs_change_password() {
         let p = Policy::default_luds();
-        let base = site_password(&mk(), "mega.nz", "me", 1, &p);
-        assert_ne!(base, site_password(&mk(), "mega.nz", "me", 2, &p));
-        assert_ne!(base, site_password(&mk(), "mega.nz", "other", 1, &p));
-        assert_ne!(base, site_password(&mk(), "mega.n", "zme", 1, &p)); // сдвиг границы site|login
-        assert_ne!(base, site_password(&[8u8; 32], "mega.nz", "me", 1, &p));
+        let base = site_password(&mk(), "mega.nz", "me", 1, &p).unwrap();
+        assert_ne!(base, site_password(&mk(), "mega.nz", "me", 2, &p).unwrap());
+        assert_ne!(base, site_password(&mk(), "mega.nz", "other", 1, &p).unwrap());
+        assert_ne!(base, site_password(&mk(), "mega.n", "zme", 1, &p).unwrap()); // сдвиг границы site|login
+        assert_ne!(base, site_password(&[8u8; 32], "mega.nz", "me", 1, &p).unwrap());
+    }
+
+    #[test]
+    fn invalid_policy_returns_none() {
+        // пустой custom-класс при symbols=true не должен паниковать
+        let p = Policy { length: 20, lower: false, upper: false, digits: false, symbols: true, custom_symbols: Some(alloc::vec![]) };
+        assert_eq!(site_password(&mk(), "x", "y", 1, &p), None);
+        // длина вне диапазона
+        let p2 = Policy { length: 0, ..Policy::default_luds() };
+        assert_eq!(site_password(&mk(), "x", "y", 1, &p2), None);
     }
 
     #[test]
     fn required_classes_present() {
         let p = Policy::default_luds();
         for i in 0..50u32 {
-            let pw = site_password(&mk(), "test.com", "u", i, &p);
+            let pw = site_password(&mk(), "test.com", "u", i, &p).unwrap();
             let b = pw.as_bytes();
             assert!(b.iter().any(|c| LOWER.contains(c)), "{pw}");
             assert!(b.iter().any(|c| UPPER.contains(c)), "{pw}");
@@ -191,7 +205,7 @@ mod tests {
     #[test]
     fn digits_only_pin() {
         let p = Policy::from_classes(6, "d", None).unwrap();
-        let pw = site_password(&mk(), "bank", "card", 1, &p);
+        let pw = site_password(&mk(), "bank", "card", 1, &p).unwrap();
         assert_eq!(pw.len(), 6);
         assert!(pw.bytes().all(|c| DIGITS.contains(&c)));
     }
@@ -200,7 +214,7 @@ mod tests {
     fn custom_symbols_respected() {
         let p = Policy::from_classes(24, "lds", Some("._-")).unwrap();
         for i in 0..20u32 {
-            let pw = site_password(&mk(), "x", "", i, &p);
+            let pw = site_password(&mk(), "x", "", i, &p).unwrap();
             for c in pw.bytes() {
                 assert!(
                     LOWER.contains(&c) || DIGITS.contains(&c) || b"._-".contains(&c),
@@ -215,7 +229,7 @@ mod tests {
     fn short_password_no_infinite_loop() {
         // Длина 2, а классов 4 - тут все классы и не обещаем, лишь бы не зациклиться.
         let p = Policy::from_classes(2, "luds", None).unwrap();
-        let pw = site_password(&mk(), "s", "", 1, &p);
+        let pw = site_password(&mk(), "s", "", 1, &p).unwrap();
         assert_eq!(pw.len(), 2);
     }
 }

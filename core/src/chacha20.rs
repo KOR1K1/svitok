@@ -91,6 +91,11 @@ impl ByteStream {
     /// Ровное число в [0, n): лишние байты отбрасываем, чтобы не было перекоса от остатка.
     pub fn next_mod(&mut self, n: usize) -> usize {
         debug_assert!(n > 0 && n <= 256);
+        // n==0 не должно доходить сюда (вызывающие проверяют), но 256 % 0 - это
+        // паника деления на ноль и в release, поэтому подстрахуемся явно
+        if n == 0 {
+            return 0;
+        }
         let limit = 256 - (256 % n);
         loop {
             let b = self.next_byte() as usize;

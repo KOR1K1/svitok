@@ -119,6 +119,15 @@ impl Blake2s {
     }
 }
 
+// finalize() затирает состояние сам, но контекст, бро́шенный без finalize
+// (ранний возврат, паника), оставил бы ключевой блок в buf и state в h.
+impl Drop for Blake2s {
+    fn drop(&mut self) {
+        crate::wipe::wipe(&mut self.buf);
+        crate::wipe::wipe_u32(&mut self.h);
+    }
+}
+
 /// Хеш от склеенных вместе кусков за один вызов, с ключом или без.
 pub fn b2s(key: &[u8], parts: &[&[u8]]) -> [u8; 32] {
     let mut h = Blake2s::new(key);

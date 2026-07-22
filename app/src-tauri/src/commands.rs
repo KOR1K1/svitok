@@ -74,6 +74,15 @@ pub struct Paper {
     pub vault: Vec<String>,
 }
 
+#[derive(Serialize)]
+pub struct SyncPreview {
+    /// Имена сайтов, которых ещё нет - будут добавлены.
+    pub added: Vec<String>,
+    /// Имена, которые уже есть - при подтверждении будут перезаписаны
+    /// (логин/счётчик/политика меняются, а значит и выводимый пароль).
+    pub updated: Vec<String>,
+}
+
 // ---------- помощники ----------
 
 fn dir_of(app: &tauri::AppHandle) -> Result<std::path::PathBuf, String> {
@@ -89,13 +98,32 @@ fn classes_str(p: &Policy) -> String {
     c
 }
 
-fn require_key(state: &AppState) -> Result<[u8; 32], String> {
+/// Рабочая копия мастер-ключа на время команды. Сам мастер-ключ живёт в
+/// AppState; сюда берётся копия, которая затирается, когда команда отработала,
+/// а не остаётся болтаться в стеке/куче потока tokio.
+pub struct MkGuard([u8; 32]);
+
+impl core::ops::Deref for MkGuard {
+    type Target = [u8; 32];
+    fn deref(&self) -> &[u8; 32] {
+        &self.0
+    }
+}
+
+impl Drop for MkGuard {
+    fn drop(&mut self) {
+        svitok_core::wipe::wipe(&mut self.0);
+    }
+}
+
+fn require_key(state: &AppState) -> Result<MkGuard, String> {
     // не паникуем, если мьютекс отравлен предыдущей паникой под замком
-    state
+    let k = state
         .lock()
         .unwrap_or_else(|p| p.into_inner())
         .master_key
-        .ok_or_else(|| "заблокировано".to_string())
+        .ok_or_else(|| "заблокировано".to_string())?;
+    Ok(MkGuard(k))
 }
 
 /// Контрольная метка мастер-ключа (8 hex). По ней при входе понимаем, верна ли фраза.
@@ -104,6 +132,16 @@ fn verifier(mk: &[u8; 32]) -> String {
         .iter()
         .map(|x| format!("{:02x}", x))
         .collect()
+}
+
+/// Имя и логин пишутся в строку списка через пробел как разделитель токенов,
+/// поэтому пробел (или иной whitespace) внутри поля подменил бы соседние
+/// поля при перечитывании. Режем это на входе.
+fn check_field(s: &str, what: &str) -> Result<(), String> {
+    if s.chars().any(|c| c.is_whitespace()) {
+        return Err(format!("{what}: пробелы недопустимы"));
+    }
+    Ok(())
 }
 
 fn unix_now() -> u64 {
@@ -135,7 +173,10 @@ pub async fn create_vault(
     phrase: String,
 ) -> Result<NewVault, String> {
     let dir = dir_of(&app)?;
-    if Store::exists(&dir) {
+    // Проверяем и файл списка, и сам сид: иначе при наличии сида в хранилище,
+    // но без sites.txt, мы сгенерировали бы новый сид поверх старого и потеряли
+    // доступ ко всем уже выведенным паролям.
+    if Store::exists(&dir) || crate::seed::has_seed(&app, &dir).unwrap_or(false) {
         return Err("Свиток уже существует".into());
     }
     let mut seed = generate_seed(&[]).map_err(|e| e.to_string())?;
@@ -180,7 +221,7 @@ fn parse_seed(input: &str) -> Result<[u8; 16], String> {
         let t = l.trim();
         t.starts_with("==") || t.split_whitespace().next().is_some_and(|w| w.parse::<u32>().is_ok())
     });
-    let bytes = if looks_numbered {
+    let mut bytes = if looks_numbered {
         let lines: Vec<&str> = input.lines().collect();
         svitok_core::base32::from_paper(&lines).map_err(|e| match e {
             svitok_core::base32::PaperError::LineCheck(n) => format!("опечатка в строке {n:02}"),
@@ -189,18 +230,22 @@ fn parse_seed(input: &str) -> Result<[u8; 16], String> {
             other => format!("не разобрал сид: {other:?}"),
         })?
     } else {
-        let chars: Vec<u8> = input
+        let mut chars: Vec<u8> = input
             .chars()
             .filter(|c| !c.is_whitespace() && *c != '-')
             .map(|c| c as u8)
             .collect();
-        svitok_core::base32::decode(&chars).ok_or("не разобрал сид — проверьте символы")?
+        let out = svitok_core::base32::decode(&chars).ok_or("не разобрал сид — проверьте символы");
+        svitok_core::wipe::wipe(&mut chars);
+        out?
     };
     if bytes.len() != 16 {
+        svitok_core::wipe::wipe(&mut bytes);
         return Err(format!("сид должен быть 16 байт, получено {}", bytes.len()));
     }
     let mut seed = [0u8; 16];
     seed.copy_from_slice(&bytes);
+    svitok_core::wipe::wipe(&mut bytes); // расшифрованный сид не оставляем в куче
     Ok(seed)
 }
 
@@ -218,6 +263,11 @@ pub async fn restore_vault(
         return Err("на этом устройстве Свиток уже есть".into());
     }
     let mut seed_bytes = parse_seed(&seed)?;
+    {
+        // сам текст сида с листка (полная строка) тоже не оставляем в куче
+        let mut s = seed;
+        svitok_core::wipe::wipe_str(&mut s);
+    }
     // Если список уже лежит (импортирован из бэкапа) - берём его вместе с
     // параметрами, иначе начинаем с пустого. Сид добавляем только после проверки.
     let mut store = if Store::exists(&dir) { Store::load(&dir)? } else { Store::empty(&dir) };
@@ -313,6 +363,9 @@ pub fn lock(state: State<AppState>) {
 /// Необратимо. Восстановить можно только с бумажного сида и фразы.
 #[tauri::command]
 pub fn destroy_vault(app: tauri::AppHandle, state: State<AppState>) -> Result<(), String> {
+    // необратимое стирание доступно только разблокированному владельцу: иначе
+    // скомпрометированный JS мог бы снести Свиток прямо с экрана блокировки
+    require_key(&state)?;
     let dir = dir_of(&app)?;
     {
         let mut g = state.lock().unwrap_or_else(|p| p.into_inner());
@@ -359,6 +412,8 @@ pub fn add_site(
     symbols: Option<String>,
 ) -> Result<(), String> {
     require_key(&state)?;
+    check_field(&name, "имя")?;
+    check_field(&login, "логин")?;
     let dir = dir_of(&app)?;
     let mut store = if Store::exists(&dir) { Store::load(&dir)? } else { Store::empty(&dir) };
     if store.sites.iter().any(|s| s.name == name) {
@@ -396,6 +451,7 @@ pub fn update_site(
     symbols: Option<String>,
 ) -> Result<(), String> {
     require_key(&state)?;
+    check_field(&login, "логин")?;
     let dir = dir_of(&app)?;
     let mut store = Store::load(&dir)?;
     let policy = Policy::from_classes(length, &classes, symbols.as_deref())
@@ -422,12 +478,42 @@ pub fn remove_site(app: tauri::AppHandle, state: State<AppState>, name: String) 
 }
 
 /// Снова показать сид - переписать на новый листок, если старый потерян или испорчен.
-/// На Android чтение сида требует биометрии (ключ Keystore), поэтому нужна разблокировка.
+/// Требуем повторный ввод фразы: разблокировки мало, иначе молчаливый вызов из
+/// скомпрометированного JS выгрузил бы сид на бумагу без действия пользователя.
+/// Фразу сверяем, заново выведя ключ (на Android чтение сида к тому же проходит
+/// через биометрию Keystore).
 #[tauri::command]
-pub fn show_seed(app: tauri::AppHandle, state: State<AppState>) -> Result<Vec<String>, String> {
+pub async fn show_seed(
+    app: tauri::AppHandle,
+    state: State<'_, AppState>,
+    phrase: String,
+) -> Result<Vec<String>, String> {
     require_key(&state)?;
     let dir = dir_of(&app)?;
+    let store = if Store::exists(&dir) { Some(Store::load(&dir)?) } else { None };
+    let kdf = store.as_ref().map(|s| s.kdf).unwrap_or(KdfParams::DEFAULT);
+    let expected = store.as_ref().and_then(|s| s.check.clone());
+
     let mut seed = crate::seed::load_seed(&app, &dir)?;
+    let seed_owned = seed;
+    let phrase_bytes = phrase.into_bytes();
+    let mut mk = tauri::async_runtime::spawn_blocking(move || {
+        let mut so = seed_owned;
+        let mut pb = phrase_bytes;
+        let k = master_key(&so, &pb, kdf);
+        svitok_core::wipe::wipe(&mut so);
+        svitok_core::wipe::wipe(&mut pb);
+        k
+    })
+    .await
+    .map_err(|e| e.to_string())?;
+    let ok = expected.as_deref().map(|e| verifier(&mk) == e).unwrap_or(true);
+    svitok_core::wipe::wipe(&mut mk);
+    if !ok {
+        svitok_core::wipe::wipe(&mut seed);
+        return Err("Неверная фраза".into());
+    }
+
     let paper = svitok_core::base32::to_paper(&seed);
     svitok_core::wipe::wipe(&mut seed);
     Ok(paper)
@@ -443,7 +529,8 @@ pub fn derive_password(
     let dir = dir_of(&app)?;
     let store = Store::load(&dir)?;
     let s = store.sites.iter().find(|s| s.name == name).ok_or("не найден")?;
-    let password = site_password(&mk, &s.name, &s.login, s.counter, &s.policy);
+    let password = site_password(&mk, &s.name, &s.login, s.counter, &s.policy)
+        .ok_or("негодная политика пароля у этого сайта")?;
     Ok(PasswordView {
         name: s.name.clone(),
         login: s.login.clone(),
@@ -539,7 +626,12 @@ pub fn vault_add_totp(
         return Err("пустой секрет".into());
     }
     let mut entries = load_entries(&dir, &mk)?;
+    // формат сейфа кодирует только 15/30/60 c. Любой другой период раньше молча
+    // схлопывался в 30 и коды генерировались неверно - теперь честно отказываем.
     let per = if period == 0 { 30 } else { period };
+    if per != 15 && per != 30 && per != 60 {
+        return Err(format!("период {per} c не поддерживается (только 15, 30 или 60)"));
+    }
     // Сразу считаем код, чтобы пользователь сверил его с сайтом.
     let digits = if digits8 { 8 } else { 6 };
     let now = unix_now();
@@ -648,7 +740,8 @@ pub fn set_screen_protection(app: tauri::AppHandle, state: State<AppState>, on: 
 /// как чувствительное (не светится в превью буфера, не уходит в облако клавиатур).
 /// На десктопе - обычная запись через clipboard-manager.
 #[tauri::command]
-pub fn clip_copy(app: tauri::AppHandle, text: String) -> Result<(), String> {
+pub fn clip_copy(app: tauri::AppHandle, state: State<AppState>, text: String) -> Result<(), String> {
+    require_key(&state)?;
     #[cfg(target_os = "android")]
     {
         #[derive(Serialize)]
@@ -720,6 +813,9 @@ pub fn backup_import(app: tauri::AppHandle, state: State<AppState>, data: String
     let dir = dir_of(&app)?;
     std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
 
+    // параметры, под которыми выведен текущий ключ. Импорт не должен их менять.
+    let current_kdf = if Store::exists(&dir) { Store::load(&dir)?.kdf } else { KdfParams::DEFAULT };
+
     // всё проверяем во временной папке: список парсится, а сейф обязан
     // расшифроваться текущим ключом. Иначе кривой импорт затёр бы рабочий
     // vault.b32 и утащил бы за собой все TOTP-секреты.
@@ -729,6 +825,18 @@ pub fn backup_import(app: tauri::AppHandle, state: State<AppState>, data: String
     let checked = (|| -> Result<usize, String> {
         svitok_common::store::atomic_write(&Store::sites_path(&tmpdir), format!("{sites}\n").as_bytes())?;
         let store = Store::load(&tmpdir).map_err(|e| format!("список сайтов повреждён: {e}"))?;
+        // Метаданные из копии обязаны сойтись с текущим ключом. Иначе импорт с
+        // чужими «# kdf»/«# check» (даже при пустой секции сейфа) сменил бы
+        // параметры вывода, следующий unlock дал бы другой mk, и рабочий
+        // vault.b32 больше не расшифровался бы никогда.
+        if store.kdf != current_kdf {
+            return Err("копия сделана с другими параметрами KDF - импорт закрыл бы доступ к сейфу".into());
+        }
+        if let Some(check) = &store.check {
+            if *check != verifier(&mk) {
+                return Err("копия сделана из другого сида или фразы".into());
+            }
+        }
         if !vault.is_empty() {
             svitok_common::store::atomic_write(&Store::vault_path(&tmpdir), format!("{vault}\n").as_bytes())?;
             let blob = store.read_vault_blob()?.ok_or("сейф в копии не читается")?;
@@ -771,11 +879,7 @@ pub fn sync_export(app: tauri::AppHandle, state: State<AppState>) -> Result<Stri
     Ok(out)
 }
 
-/// Импорт списка сайтов из QR: сливаем в текущий список по имени -
-/// новые добавляем, существующие обновляем. Секреты не переносятся.
-#[tauri::command]
-pub fn sync_import(app: tauri::AppHandle, state: State<AppState>, data: String) -> Result<usize, String> {
-    require_key(&state)?;
+fn parse_sync(data: &str) -> Result<Vec<Site>, String> {
     let body = data
         .trim()
         .strip_prefix(SYNC_HEADER)
@@ -791,14 +895,47 @@ pub fn sync_import(app: tauri::AppHandle, state: State<AppState>, data: String) 
     if incoming.is_empty() {
         return Err("в переносе нет сайтов".into());
     }
+    Ok(incoming)
+}
+
+/// Что даст импорт из этого QR: какие сайты добавятся, какие перезапишутся.
+/// Обновление существующего меняет выводимый пароль, поэтому диф показываем
+/// пользователю до применения, а не переписываем молча.
+#[tauri::command]
+pub fn sync_preview(app: tauri::AppHandle, state: State<AppState>, data: String) -> Result<SyncPreview, String> {
+    require_key(&state)?;
+    let incoming = parse_sync(&data)?;
+    let dir = dir_of(&app)?;
+    let store = if Store::exists(&dir) { Store::load(&dir)? } else { Store::empty(&dir) };
+    let mut added = Vec::new();
+    let mut updated = Vec::new();
+    for site in &incoming {
+        if store.sites.iter().any(|s| s.name == site.name) {
+            updated.push(site.name.clone());
+        } else {
+            added.push(site.name.clone());
+        }
+    }
+    Ok(SyncPreview { added, updated })
+}
+
+/// Импорт списка сайтов из QR: новые добавляем всегда. Существующие
+/// перезаписываем только при `overwrite=true` - это отдельное подтверждение
+/// пользователя после показа дифа (см. sync_preview).
+#[tauri::command]
+pub fn sync_import(app: tauri::AppHandle, state: State<AppState>, data: String, overwrite: bool) -> Result<usize, String> {
+    require_key(&state)?;
+    let incoming = parse_sync(&data)?;
     let dir = dir_of(&app)?;
     let mut store = if Store::exists(&dir) { Store::load(&dir)? } else { Store::empty(&dir) };
     let mut changed = 0usize;
     for site in incoming {
         match store.sites.iter_mut().find(|s| s.name == site.name) {
             Some(existing) => {
-                *existing = site;
-                changed += 1;
+                if overwrite {
+                    *existing = site;
+                    changed += 1;
+                }
             }
             None => {
                 store.sites.push(site);

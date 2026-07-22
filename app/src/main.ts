@@ -349,20 +349,39 @@ function sheetSync() {
     });
 
     // сканируем QR другого устройства и вливаем список (только на телефоне)
+    const confirmBox = h("div.stack.gap-2", { style: "display:none" });
+    const finish = (n: number) => {
+      haptic("confirm");
+      confetti();
+      toast(t("sync.imported", { n }), "ok");
+      markBackupStale();
+      close();
+      (document.querySelector('.tab[data-tab="sites"]') as HTMLElement | null)?.click();
+    };
     const scanBtn = h("button.btn.btn--seal.btn--full", {}, [icons.camera(), t("sync.scan")]);
     scanBtn.addEventListener("click", async () => {
       err.textContent = "";
+      confirmBox.style.display = "none";
+      confirmBox.replaceChildren();
       haptic("tap");
       try {
         const content = await scanQr();
         if (!content) return;
-        const n = await api.syncImport(content);
-        haptic("confirm");
-        confetti();
-        toast(t("sync.imported", { n }), "ok");
-        markBackupStale();
-        close();
-        (document.querySelector('.tab[data-tab="sites"]') as HTMLElement | null)?.click();
+        const prev = await api.syncPreview(content);
+        if (prev.added.length === 0 && prev.updated.length === 0) { toast(t("sync.nothing"), "ok"); return; }
+        // новые сайты добавляем всегда, перезапись существующих меняет выводимый
+        // пароль - её применяем только по явному согласию, показав что затронуто
+        if (prev.updated.length === 0) { finish(await api.syncImport(content, false)); return; }
+
+        const lines: HTMLElement[] = [];
+        if (prev.added.length) lines.push(h("div.t-body-2", {}, [t("sync.willAdd", { n: prev.added.length })]));
+        lines.push(h("div.t-body-2.err", { style: "line-height:1.5" }, [t("sync.willUpdate", { names: prev.updated.join(", ") })]));
+        const both = h("button.btn.btn--danger.btn--full", {}, [t("sync.applyBoth")]);
+        both.addEventListener("click", async () => { try { finish(await api.syncImport(content, true)); } catch (e) { err.textContent = String(e); } });
+        const addOnly = h("button.btn.btn--full", {}, [t("sync.addOnly")]);
+        addOnly.addEventListener("click", async () => { try { finish(await api.syncImport(content, false)); } catch (e) { err.textContent = String(e); } });
+        confirmBox.replaceChildren(...lines, both, addOnly);
+        confirmBox.style.display = "block";
       } catch (e) {
         const msg = String(e);
         err.textContent = /no-camera/.test(msg) ? t("scan.noCamera") : msg;
@@ -375,6 +394,7 @@ function sheetSync() {
       showBtn,
       holder,
       ...(IS_MOBILE ? [h("div.t-body-2.faint", { style: "line-height:1.6;margin-top:4px" }, [t("sync.scanHint")]), scanBtn] : []),
+      confirmBox,
       err,
     ]);
   });
@@ -1048,6 +1068,8 @@ async function renderCodes(content: HTMLElement) {
   tickTimer = window.setInterval(() => tick(states), 1000);
 }
 
+let totpClipTimer = 0;
+
 function totpRow(st: CodeState): HTMLElement {
   const codeEl = h("div.t-totp", {}, [groupSecret(st.code, 3)]);
   const ring = svgEl(
@@ -1069,6 +1091,10 @@ function totpRow(st: CodeState): HTMLElement {
     await copyToClipboard(st.code).catch(() => {});
     haptic("tap");
     toast(t("codes.copied"), "ok");
+    // код живёт недолго, но в буфере он не должен оставаться дольше окна - чистим,
+    // как и пароли
+    clearTimeout(totpClipTimer);
+    totpClipTimer = window.setTimeout(() => { void clearClipboard().catch(() => {}); }, 30000);
   });
   return row;
 }
@@ -1287,8 +1313,14 @@ function sheetPassword(s: SiteView, refresh: () => void) {
       if (!pw) pw = (await api.derivePassword(s.name)).password;
       return pw;
     };
+    let held = false;
     const reveal = async (on: boolean) => {
-      value.textContent = on ? groupSecret(await ensure(), 4) : dots;
+      held = on;
+      if (!on) { value.textContent = dots; return; }
+      const shown = groupSecret(await ensure(), 4);
+      // за время await деривации кнопку могли уже отпустить - тогда не показываем,
+      // иначе пароль залипнет на экране после отпускания
+      if (held) value.textContent = shown;
     };
     const holdBtn = h("button.btn.btn--full", {}, [t("pw.reveal")]);
     const start = async (e: Event) => { e.preventDefault(); await reveal(true); };
@@ -1440,6 +1472,9 @@ function sheetAddTotp(refresh: () => void) {
     const err = h("div.t-body-2.err", { style: "min-height:20px" });
     const save = h("button.btn.btn--seal.btn--full", {}, [t("addtotp.add")]);
 
+    // период из отсканированного otpauth (30 по умолчанию для ручного ввода)
+    let period = 30;
+
     // Сканируем otpauth-QR с сайта (только на телефоне).
     const scanBtn = h("button.btn.btn--full", {}, [icons.camera(), t("addtotp.scan")]);
     scanBtn.addEventListener("click", async () => {
@@ -1453,13 +1488,14 @@ function sheetAddTotp(refresh: () => void) {
         label.value = otp.label;
         secret.value = otp.secret;
         d8.checked = otp.digits8;
+        period = otp.period;
         haptic("confirm");
       } catch { err.textContent = t("scan.noCamera"); }
     });
     save.addEventListener("click", async () => {
       if (!label.value.trim() || !secret.value.trim()) { err.textContent = t("addtotp.errFill"); return; }
       try {
-        const tc = await api.vaultAddTotp(label.value.trim(), secret.value.replace(/\s/g, ""), d8.checked, 30);
+        const tc = await api.vaultAddTotp(label.value.trim(), secret.value.replace(/\s/g, ""), d8.checked, period);
         markBackupStale(); haptic("confirm");
         toast(t("addtotp.added", { code: tc.code }), "ok");
         close(); refresh();
@@ -1529,17 +1565,37 @@ async function sheetPaper() {
   ]));
 }
 
-/** Показать сид ещё раз, чтобы переписать на новый листок. На Android идёт под биометрией. */
+/** Показать сид ещё раз, чтобы переписать на новый листок. Требуем повторить
+ * фразу: без этого молчаливый вызов из JS мог бы выгрузить сид. На Android к
+ * тому же чтение сида идёт под биометрией. */
 function sheetShowSeed() {
   openSheet(() => {
     const box = h("div.paper");
     const err = h("div.t-body-2.err", { style: "min-height:20px" });
-    api.showSeed()
-      .then((lines) => { lines.forEach((l) => box.append(paperLine(l))); })
-      .catch((e) => { err.textContent = String(e); });
+    const phrase = h("input.field", { type: "password", placeholder: t("showseed.phrasePh"), autocomplete: "off" }) as HTMLInputElement;
+    const phraseWrap = withTools(phrase, { reveal: true });
+    const go = h("button.btn.btn--seal.btn--full", {}, [t("showseed.reveal")]);
+    let shown = false;
+    go.addEventListener("click", async () => {
+      if (shown) return;
+      if (!phrase.value) { err.textContent = t("showseed.needPhrase"); return; }
+      err.textContent = "";
+      go.textContent = t("showseed.revealing");
+      try {
+        const lines = await api.showSeed(phrase.value);
+        phrase.value = "";
+        shown = true;
+        lines.forEach((l) => box.append(paperLine(l)));
+        phraseWrap.remove();
+        go.remove();
+        haptic("confirm");
+      } catch (e) { err.textContent = String(e); go.textContent = t("showseed.reveal"); }
+    });
     return h("div.stack.gap-3", {}, [
       h("div.t-title", {}, [t("showseed.title")]),
       h("div.t-body-2", { style: "line-height:1.6" }, [t("showseed.hint")]),
+      phraseWrap,
+      go,
       box,
       err,
     ]);

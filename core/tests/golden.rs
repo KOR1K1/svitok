@@ -30,7 +30,7 @@ fn print_golden() {
     println!("master_key = {}", hex(&mk));
     println!("fingerprint = {}", String::from_utf8_lossy(&fingerprint(&mk)));
     let p = Policy::default_luds();
-    println!("pw(mega.nz, me, 1) = {}", site_password(&mk, "mega.nz", "me", 1, &p));
+    println!("pw(mega.nz, me, 1) = {}", site_password(&mk, "mega.nz", "me", 1, &p).unwrap());
     let seed_paper = base32::to_paper(SEED);
     for l in &seed_paper {
         println!("seed-paper: {l}");
@@ -55,7 +55,7 @@ fn golden_fingerprint() {
 #[test]
 fn golden_site_password() {
     let p = Policy::default_luds();
-    assert_eq!(site_password(&mk(), "mega.nz", "me", 1, &p), GOLDEN_PW);
+    assert_eq!(site_password(&mk(), "mega.nz", "me", 1, &p).unwrap(), GOLDEN_PW);
 }
 
 #[test]

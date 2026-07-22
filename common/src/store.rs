@@ -122,18 +122,50 @@ impl Store {
     }
 }
 
+static TMP_SEQ: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+
 /// Пишем через временный файл рядом и rename поверх. Обрыв питания или падение
 /// в середине оставит нетронутым старый файл, а не обрезанный - иначе можно
 /// потерять сейф или строку # check, и вход перестанет проверять фразу.
+///
+/// Имя tmp уникально (pid + счётчик), чтобы две одновременные записи не топтали
+/// один файл; create_new (O_EXCL) не даёт пойти по подложенному симлинку;
+/// на unix ставим 0600 и досинхиваем каталог, чтобы rename пережил обрыв питания.
 pub fn atomic_write(path: &Path, contents: &[u8]) -> Result<(), String> {
     use std::io::Write;
-    let tmp = path.with_extension("tmp");
-    {
-        let mut f = std::fs::File::create(&tmp).map_err(|e| e.to_string())?;
+    let pid = std::process::id();
+    let n = TMP_SEQ.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    let fname = path.file_name().and_then(|s| s.to_str()).unwrap_or("store");
+    let tmp = path.with_file_name(format!(".{fname}.{pid}.{n}.tmp"));
+
+    let res = (|| -> Result<(), String> {
+        let mut opts = std::fs::OpenOptions::new();
+        opts.write(true).create_new(true);
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::OpenOptionsExt;
+            opts.mode(0o600);
+        }
+        let mut f = opts.open(&tmp).map_err(|e| e.to_string())?;
         f.write_all(contents).map_err(|e| e.to_string())?;
         f.sync_all().map_err(|e| e.to_string())?;
+        Ok(())
+    })();
+    if let Err(e) = res {
+        let _ = std::fs::remove_file(&tmp);
+        return Err(e);
     }
-    std::fs::rename(&tmp, path).map_err(|e| e.to_string())
+    if let Err(e) = std::fs::rename(&tmp, path) {
+        let _ = std::fs::remove_file(&tmp);
+        return Err(e.to_string());
+    }
+    #[cfg(unix)]
+    if let Some(parent) = path.parent() {
+        if let Ok(d) = std::fs::File::open(parent) {
+            let _ = d.sync_all();
+        }
+    }
+    Ok(())
 }
 
 impl Site {

@@ -72,7 +72,9 @@ class KeystorePlugin(private val activity: Activity) : Plugin(activity) {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
             builder.setUserAuthenticationParameters(
                 0, // ноль - спрашивать при каждом использовании
-                KeyProperties.AUTH_BIOMETRIC_STRONG or KeyProperties.AUTH_DEVICE_CREDENTIAL,
+                // только биометрия. PIN/паттерн устройства не пускаем: сид не должен
+                // открываться знанием кода блокировки (его легко подсмотреть)
+                KeyProperties.AUTH_BIOMETRIC_STRONG,
             )
         } else {
             @Suppress("DEPRECATION")
@@ -101,12 +103,8 @@ class KeystorePlugin(private val activity: Activity) : Plugin(activity) {
                 onError("активность не FragmentActivity")
                 return@runOnUiThread
             }
-            val allowed = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-                BiometricManager.Authenticators.BIOMETRIC_STRONG or
-                    BiometricManager.Authenticators.DEVICE_CREDENTIAL
-            } else {
-                BiometricManager.Authenticators.BIOMETRIC_STRONG
-            }
+            // только биометрия на всех версиях: сид не открываем кодом блокировки
+            val allowed = BiometricManager.Authenticators.BIOMETRIC_STRONG
             val prompt = BiometricPrompt(
                 fa,
                 ContextCompat.getMainExecutor(activity),
@@ -133,11 +131,8 @@ class KeystorePlugin(private val activity: Activity) : Plugin(activity) {
                 .setTitle("Свиток")
                 .setSubtitle("Подтвердите личность")
                 .setAllowedAuthenticators(allowed)
-            // когда разрешена только биометрия, кнопка отмены обязательна.
-            // а вот с DEVICE_CREDENTIAL её задавать нельзя.
-            if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R) {
-                builder.setNegativeButtonText("Отмена")
-            }
+            // разрешена только биометрия - значит кнопка отмены обязательна
+            builder.setNegativeButtonText("Отмена")
             try {
                 prompt.authenticate(builder.build(), BiometricPrompt.CryptoObject(cipher))
             } catch (e: Exception) {

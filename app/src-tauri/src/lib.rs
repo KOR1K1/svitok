@@ -128,6 +128,7 @@ pub fn run() {
             commands::backup_export,
             commands::backup_import,
             commands::sync_export,
+            commands::sync_preview,
             commands::sync_import,
             commands::paper_export
         ])

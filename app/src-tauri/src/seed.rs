@@ -55,14 +55,16 @@ pub fn store_seed(app: &tauri::AppHandle, dir: &Path, seed: &[u8; 16]) -> Result
         use tauri::Manager;
         let _ = dir;
         #[derive(serde::Serialize)]
-        struct A {
-            seed: String,
+        struct A<'a> {
+            seed: &'a str,
         }
+        // держим hex у себя и передаём по ссылке, чтобы затереть свою копию после
+        // вызова (JNI/serde сделают промежуточную копию - она вне нашего контроля)
+        let mut h = hex(seed);
         let p = app.state::<crate::SeedPlugin>();
-        let _: serde_json::Value = p
-            .0
-            .run_mobile_plugin("storeSeed", A { seed: hex(seed) })
-            .map_err(|e| e.to_string())?;
+        let out: Result<serde_json::Value, _> = p.0.run_mobile_plugin("storeSeed", A { seed: &h });
+        svitok_core::wipe::wipe_str(&mut h);
+        out.map_err(|e| e.to_string())?;
         Ok(())
     }
     #[cfg(not(target_os = "android"))]
@@ -82,13 +84,17 @@ pub fn load_seed(app: &tauri::AppHandle, dir: &Path) -> Result<[u8; 16], String>
             seed: String,
         }
         let p = app.state::<crate::SeedPlugin>();
-        let r: R = p.0.run_mobile_plugin("loadSeed", ()).map_err(|e| e.to_string())?;
-        let b = unhex(&r.seed).ok_or("плохой hex сида")?;
+        let mut r: R = p.0.run_mobile_plugin("loadSeed", ()).map_err(|e| e.to_string())?;
+        let b = unhex(&r.seed);
+        svitok_core::wipe::wipe_str(&mut r.seed); // hex-строку сида не оставляем в куче
+        let mut b = b.ok_or("плохой hex сида")?;
         if b.len() != 16 {
+            svitok_core::wipe::wipe(&mut b);
             return Err("сид не 16 байт".into());
         }
         let mut s = [0u8; 16];
         s.copy_from_slice(&b);
+        svitok_core::wipe::wipe(&mut b);
         Ok(s)
     }
     #[cfg(not(target_os = "android"))]

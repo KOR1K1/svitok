@@ -18,6 +18,12 @@ pub fn wipe_u32(buf: &mut [u32]) {
     compiler_fence(Ordering::SeqCst);
 }
 
+/// Затирает содержимое String на месте - для секретов в текстовых полях
+/// (заметки, recovery-коды). Байты обнуляются до освобождения памяти.
+pub fn wipe_str(s: &mut alloc::string::String) {
+    unsafe { wipe(s.as_mut_vec()) };
+}
+
 /// Держатель секретных байт: сам затирается, когда выходит из области видимости.
 /// Поле приватное, иначе mem::take увёл бы буфер в обход затирания.
 pub struct Secret(alloc::vec::Vec<u8>);
