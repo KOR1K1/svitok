@@ -2,6 +2,8 @@
 //! Мастер-ключ держим тут, в Rust-состоянии. В JS через мост он не уходит.
 
 mod commands;
+#[cfg(target_os = "android")]
+mod jni_autofill;
 mod seed;
 #[cfg(not(any(target_os = "android", target_os = "ios")))]
 mod seedstore;

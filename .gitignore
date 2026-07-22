@@ -27,6 +27,8 @@ app/src-tauri/gen/apple/
 *.log
 android-build*.log
 android-release.log
+_*.txt
+_*.png
 cdp.mjs
 qr-test.html
 shot.png

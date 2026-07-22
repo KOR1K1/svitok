@@ -5,4 +5,18 @@
         <item name="android:windowBackground">@color/ink_bg</item>
         <item name="android:colorBackground">@color/ink_bg</item>
     </style>
+
+    <!-- Автозаполнение как нижний лист: прозрачное полноэкранное окно с
+         затемнением, сам лист прижат книзу и поднимается над клавиатурой. -->
+    <style name="Theme.Svitok.Autofill" parent="Theme.MaterialComponents.NoActionBar">
+        <item name="android:windowBackground">@android:color/transparent</item>
+        <item name="android:windowIsTranslucent">true</item>
+        <item name="android:windowIsFloating">false</item>
+        <item name="android:backgroundDimEnabled">true</item>
+        <item name="android:backgroundDimAmount">0.55</item>
+        <item name="android:windowContentOverlay">@null</item>
+        <item name="android:windowSoftInputMode">adjustResize</item>
+        <item name="colorPrimary">@color/seal</item>
+        <item name="colorAccent">@color/seal</item>
+    </style>
 </resources>

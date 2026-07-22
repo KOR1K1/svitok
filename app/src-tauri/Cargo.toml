@@ -22,6 +22,10 @@ tauri-plugin-clipboard-manager = "2"
 [target.'cfg(any(target_os = "android", target_os = "ios"))'.dependencies]
 tauri-plugin-barcode-scanner = "2"
 
+# JNI-мост для AutofillService: он живёт вне Tauri-активити и зовёт ядро напрямую
+[target.'cfg(target_os = "android")'.dependencies]
+jni = "0.21"
+
 # На десктопе сид держим не в файле, а в системном хранилище секретов:
 # Windows Credential Manager/DPAPI, macOS Keychain, Linux kernel keyutils.
 [target.'cfg(not(any(target_os = "android", target_os = "ios")))'.dependencies]

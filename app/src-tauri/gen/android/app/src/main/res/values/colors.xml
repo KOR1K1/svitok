@@ -1,5 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <color name="ink_bg">#FF141210</color>
+    <color name="ink_card">#FF1C1917</color>
+    <color name="ink_text">#FFEDE7DE</color>
+    <color name="ink_faint">#FF8A8178</color>
     <color name="seal">#FFD4643E</color>
 </resources>

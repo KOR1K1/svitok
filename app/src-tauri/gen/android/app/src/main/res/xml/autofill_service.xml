@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Экран настроек сервиса открывает само приложение. Compatibility-mode для
+     браузеров: так webDomain текущей страницы доходит до сервиса даже там, где
+     нативной поддержки автозаполнения нет. -->
+<autofill-service xmlns:android="http://schemas.android.com/apk/res/android"
+    android:settingsActivity="app.svitok.vault.MainActivity">
+    <compatibility-package android:name="com.android.chrome" android:maxLongVersionCode="999999999999" />
+    <compatibility-package android:name="com.chrome.beta" android:maxLongVersionCode="999999999999" />
+    <compatibility-package android:name="org.mozilla.firefox" android:maxLongVersionCode="999999999999" />
+    <compatibility-package android:name="com.brave.browser" android:maxLongVersionCode="999999999999" />
+    <compatibility-package android:name="com.microsoft.emmx" android:maxLongVersionCode="999999999999" />
+    <compatibility-package android:name="com.opera.browser" android:maxLongVersionCode="999999999999" />
+    <compatibility-package android:name="com.sec.android.app.sbrowser" android:maxLongVersionCode="999999999999" />
+    <compatibility-package android:name="com.mi.globalbrowser" android:maxLongVersionCode="999999999999" />
+    <compatibility-package android:name="com.android.browser" android:maxLongVersionCode="999999999999" />
+</autofill-service>
