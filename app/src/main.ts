@@ -650,20 +650,24 @@ async function clearClipboard(): Promise<void> {
   await copyToClipboard("");
 }
 
-function fieldTools(field: AnyField, opts: { reveal?: boolean; paste?: boolean; copy?: boolean }): HTMLElement {
+/** Глаз «показать/скрыть» прямо в поле, у правого края - не отдельной кнопкой снизу. */
+function revealWrap(field: HTMLInputElement): HTMLElement {
+  const eye = h("button.field-eye", { type: "button", "aria-label": t("tools.show") }, [icons.eye()]);
+  let shown = false;
+  eye.addEventListener("click", () => {
+    shown = !shown;
+    field.type = shown ? "text" : "password";
+    clear(eye);
+    eye.append(shown ? icons.eyeOff() : icons.eye());
+    eye.setAttribute("aria-label", shown ? t("tools.hide") : t("tools.show"));
+    haptic("tap");
+    field.focus();
+  });
+  return h("div.field-wrap", {}, [field, eye]);
+}
+
+function fieldTools(field: AnyField, opts: { paste?: boolean; copy?: boolean }): HTMLElement {
   const btns: HTMLElement[] = [];
-  if (opts.reveal && field instanceof HTMLInputElement) {
-    const b = h("button.fa-btn", { type: "button" }, [icons.eye(), h("span", {}, [t("tools.show")])]);
-    let shown = false;
-    b.addEventListener("click", () => {
-      shown = !shown;
-      field.type = shown ? "text" : "password";
-      clear(b);
-      b.append(shown ? icons.eyeOff() : icons.eye(), h("span", {}, [shown ? t("tools.hide") : t("tools.show")]));
-      haptic("tap");
-    });
-    btns.push(b);
-  }
   if (opts.paste) {
     const b = h("button.fa-btn", { type: "button" }, [icons.paste(), h("span", {}, [t("tools.paste")])]);
     b.addEventListener("click", async () => {
@@ -685,9 +689,11 @@ function fieldTools(field: AnyField, opts: { reveal?: boolean; paste?: boolean; 
   return h("div.field-tools", {}, btns);
 }
 
-/** Поле и панель действий под ним одним блоком. */
+/** Поле и его действия одним блоком: «показать» - глазом в самом поле,
+    вставка/копирование - панелью под ним. */
 function withTools(field: AnyField, opts: { reveal?: boolean; paste?: boolean; copy?: boolean }): HTMLElement {
-  return h("div.stack", { style: "gap:6px" }, [field, fieldTools(field, opts)]);
+  const box = opts.reveal && field instanceof HTMLInputElement ? revealWrap(field) : field;
+  return h("div.stack", { style: "gap:6px" }, [box, fieldTools(field, { paste: opts.paste, copy: opts.copy })]);
 }
 
 // автоблокировка
@@ -763,7 +769,7 @@ function screenCreate() {
   newBtn.addEventListener("click", () => screenCreateNew());
   restoreBtn.addEventListener("click", () => screenRestore());
   setScreen(
-    h("div.screen", {}, [
+    h("div.screen.screen--gate", {}, [
       h("div.grow.col-center.gap-4", { style: "justify-content:center;padding:0 20px" }, [
         logoScroll("logo--lg"),
         h("div.wordmark", {}, [t("app.name")]),
@@ -825,8 +831,9 @@ function screenCreateNew() {
     }
   });
 
+  p2.addEventListener("keydown", (e) => { if ((e as KeyboardEvent).key === "Enter") create.click(); });
   setScreen(
-    h("div.screen", {}, [
+    h("div.screen.screen--gate", {}, [
       h("div.screen__center", {}, [
         titleRow(t("create.title"), "help.phrase.title", "help.phrase.body"),
         h("div.t-body-2", { style: "text-align:center" }, [t("create.hint")]),
@@ -841,7 +848,7 @@ function screenSeedPaper(fp: string, lines: string[]) {
   const done = h("button.btn.btn--seal.btn--full", {}, [t("seed.done")]);
   done.addEventListener("click", () => screenMain());
   setScreen(
-    h("div.screen", {}, [
+    h("div.screen.screen--gate", {}, [
       h("div.screen__center", {}, [
         titleRow(t("seed.title"), "help.seed.title", "help.seed.body"),
         h("div.t-body-2.err", {}, [t("seed.warn")]),
@@ -886,8 +893,9 @@ function screenRestore() {
     }
   });
 
+  phrase.addEventListener("keydown", (e) => { if ((e as KeyboardEvent).key === "Enter") go.click(); });
   setScreen(
-    h("div.screen", {}, [
+    h("div.screen.screen--gate", {}, [
       h("div.screen__center", {}, [
         h("div.t-title", { style: "text-align:center" }, [t("restore.title")]),
         h("div.t-body-2", {}, [t("restore.hint")]),
@@ -941,7 +949,7 @@ function screenUnlock() {
   phrase.addEventListener("keydown", (e) => { if ((e as KeyboardEvent).key === "Enter") tryUnlock(); });
 
   setScreen(
-    h("div.screen", {}, [
+    h("div.screen.screen--gate", {}, [
       h("div.grow.col-center.gap-4", { style: "justify-content:center" }, [
         logo,
         h("div.wordmark", {}, [t("app.name")]),

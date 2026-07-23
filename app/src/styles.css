@@ -167,6 +167,17 @@ body {
 .is-desktop .screen:not(.shell) { align-items: center; }
 .is-desktop .screen:not(.shell) > * { width: 100%; max-width: 460px; }
 
+/* Экраны входа/создания на ПК - это окно приложения, а не телефон в руке:
+   всё одной колонкой по центру окна (мобильная разметка прижимает форму к
+   низу, под большой палец и сенсорную клавиатуру), логотип и шрифт крупнее. */
+.is-desktop .screen--gate { justify-content: center; gap: var(--s6); }
+.is-desktop .screen--gate > .grow { flex: 0 0 auto; }
+.is-desktop .screen--gate .screen__center { flex: 0 0 auto; }
+.is-desktop .screen--gate .kb-pad { padding-bottom: 0; }
+.is-desktop .screen--gate .logo--lg { width: 136px; height: 136px; }
+.is-desktop .screen--gate .wordmark { font-size: 34px; }
+.is-desktop .screen--gate .t-body-2 { font-size: 15px; }
+
 /* выделять текст можно только в полях и секретах, не во всём интерфейсе */
 .selectable, input, textarea { user-select: text; }
 
@@ -400,7 +411,37 @@ body {
 .field::placeholder { color: var(--text-3); }
 .field.mono { font-family: "Martian", monospace; letter-spacing: 0.04em; }
 
-/* Ряд действий под полем - показать, вставить, копировать */
+/* «Показать/скрыть» живёт в самом поле - глаз у правого края.
+   Встроенный глаз WebView2 (Edge) прячем - иначе их два разных. */
+input[type="password"]::-ms-reveal { display: none; }
+
+.field-wrap { position: relative; }
+.field-wrap .field { padding-right: 52px; }
+.field-eye {
+  position: absolute;
+  right: 6px;
+  top: 50%;
+  transform: translateY(-50%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 38px;
+  height: 38px;
+  border: none;
+  border-radius: 9px;
+  background: transparent;
+  color: var(--text-3);
+  cursor: pointer;
+  touch-action: manipulation;
+  transition: color var(--t-press) var(--fade);
+}
+.field-eye svg { width: 20px; height: 20px; stroke: currentColor; fill: none; stroke-width: 1.7; }
+.field-eye:active { color: var(--text); }
+@media (hover: hover) {
+  .field-eye:hover { color: var(--text); }
+}
+
+/* Ряд действий под полем - вставить, копировать */
 .field-tools {
   display: flex;
   gap: 8px;
