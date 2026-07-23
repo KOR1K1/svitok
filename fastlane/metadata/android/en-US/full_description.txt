@@ -1,0 +1,18 @@
+Svitok stores nothing. Every password is recomputed on demand from two secrets: a random 128-bit seed written on a piece of paper, and a master phrase in your head. Same inputs, same password - on any device, forever, fully offline. There is no vault to leak and no cloud to breach.
+
+<b>How it works</b>
+
+A memory-hard KDF turns the seed and phrase into a master key; each site's password is derived from it deterministically (site, login, counter, length, character policy). Rotate a leaked password by bumping its counter. The algorithm is small enough to be reimplemented from the paper spec with no libraries and no internet - if every copy of the app vanished, your passwords would still be recoverable.
+
+<b>Features</b>
+
+* Works fully offline - the release build has no internet permission at all
+* System autofill service: fills logins and passwords in apps and browsers; each password is derived per request, confirmed by your fingerprint and phrase
+* Several accounts per site, and domain aliases for services living on several domains
+* Encrypted mini-vault for TOTP (2FA) codes, recovery codes and notes - the things that genuinely can't be derived
+* QR sync of the site list between devices, with our own scanner (CameraX + ZXing, no Google libraries)
+* Text backup and paper export with checksums that catch hand-copying typos
+* Seed sealed in the Android Keystore, unlocked by biometrics only; screen capture blocked on secret screens
+* Russian and English, dark "ink" theme
+
+The crypto core has zero dependencies and the whole app is GPL-3.0. Builds are reproducible: build it yourself and compare bytes with the release.

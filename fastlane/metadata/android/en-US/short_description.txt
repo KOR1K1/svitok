@@ -1,0 +1,1 @@
+Paper-first offline password manager: passwords are derived, never stored
