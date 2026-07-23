@@ -1075,6 +1075,109 @@ pub fn sync_import(app: tauri::AppHandle, state: State<AppState>, data: String, 
     Ok(changed)
 }
 
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ImportPreview {
+    /// Путь выбранного файла - его же фронт передаст в import_apply.
+    pub path: String,
+    /// Что добавится, в виде «имя (логин)».
+    pub added: Vec<String>,
+    /// Сколько записей уже есть (та же пара имя+логин) - их не трогаем.
+    pub existing: usize,
+    /// Строки без домена и имени - не разобрали.
+    pub skipped: usize,
+}
+
+/// Разобрать файл импорта и свериться со списком. Пароли из файла не читаем
+/// в записи вовсе (см. import.rs), текст файла затираем.
+#[cfg(not(any(target_os = "android", target_os = "ios")))]
+fn import_parse_diff(dir: &std::path::Path, path: &std::path::Path) -> Result<(Vec<crate::import::ImportedSite>, usize, usize), String> {
+    let mut text = std::fs::read_to_string(path).map_err(|e| format!("не прочитал файл: {e}"))?;
+    let parsed = crate::import::parse(&text);
+    svitok_core::wipe::wipe_str(&mut text);
+    let parsed = parsed?;
+    let store = if Store::exists(dir) { Store::load(dir)? } else { Store::empty(dir) };
+    let (mut fresh, mut existing) = (Vec::new(), 0usize);
+    for s in parsed.sites {
+        if store.sites.iter().any(|e| e.name == s.name && e.login == s.login) {
+            existing += 1;
+        } else {
+            fresh.push(s);
+        }
+    }
+    Ok((fresh, existing, parsed.skipped))
+}
+
+/// Импорт, шаг 1: выбрать файл и показать, что из него выйдет. Диалог зовётся
+/// из Rust - содержимое файла (включая чужие пароли) в webview не попадает,
+/// наружу уходят только домены и логины. Телефон списки получает по QR.
+#[tauri::command]
+pub async fn import_pick(app: tauri::AppHandle, state: State<'_, AppState>) -> Result<Option<ImportPreview>, String> {
+    require_key(&state)?;
+    #[cfg(any(target_os = "android", target_os = "ios"))]
+    {
+        let _ = app;
+        Err("импорт файлов - на десктопе; на телефон список переносится по QR".into())
+    }
+    #[cfg(not(any(target_os = "android", target_os = "ios")))]
+    {
+        use tauri_plugin_dialog::DialogExt;
+        let picked = app
+            .dialog()
+            .file()
+            .add_filter("CSV / JSON", &["csv", "json", "txt"])
+            .blocking_pick_file();
+        let Some(f) = picked else { return Ok(None) };
+        let path = f.into_path().map_err(|e| e.to_string())?;
+        let dir = dir_of(&app)?;
+        let (fresh, existing, skipped) = import_parse_diff(&dir, &path)?;
+        Ok(Some(ImportPreview {
+            path: path.display().to_string(),
+            added: fresh
+                .iter()
+                .map(|s| if s.login.is_empty() { s.name.clone() } else { format!("{} ({})", s.name, s.login) })
+                .collect(),
+            existing,
+            skipped,
+        }))
+    }
+}
+
+/// Импорт, шаг 2: добавить новые записи из того же файла. Только добавление:
+/// у импорта нет ни счётчиков, ни политик, так что существующие пары
+/// имя+логин ему менять нечего. Политика у новых - умолчания (20, luds).
+#[tauri::command]
+pub async fn import_apply(app: tauri::AppHandle, state: State<'_, AppState>, path: String) -> Result<usize, String> {
+    require_key(&state)?;
+    #[cfg(any(target_os = "android", target_os = "ios"))]
+    {
+        let _ = (app, path);
+        Err("импорт файлов - на десктопе".into())
+    }
+    #[cfg(not(any(target_os = "android", target_os = "ios")))]
+    {
+        let dir = dir_of(&app)?;
+        let (fresh, _, _) = import_parse_diff(&dir, std::path::Path::new(&path))?;
+        let mut store = if Store::exists(&dir) { Store::load(&dir)? } else { Store::empty(&dir) };
+        let policy = Policy::from_classes(Policy::DEFAULT_LEN, "luds", None).ok_or("политика по умолчанию")?;
+        let n = fresh.len();
+        for s in fresh {
+            let site = Site {
+                id: store.new_id()?,
+                name: s.name,
+                login: s.login,
+                counter: 1,
+                policy: policy.clone(),
+                aliases: Vec::new(),
+                label: String::new(),
+            };
+            store.sites.push(site);
+        }
+        store.save()?;
+        Ok(n)
+    }
+}
+
 /// Токен связки для браузерного расширения (десктоп). Показывается в настройках,
 /// пользователь один раз копирует его в расширение - это и есть подтверждение.
 #[tauri::command]

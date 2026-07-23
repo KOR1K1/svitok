@@ -33,6 +33,8 @@ keyring = { version = "3", features = ["windows-native", "apple-native", "sync-s
 zeroize = "1"
 # локальный сокет (named pipe / unix socket) для native-messaging хоста расширения
 interprocess = "2"
+# файловый диалог импорта; файл читает Rust, JS видит только путь и метаданные
+tauri-plugin-dialog = "2"
 
 [features]
 # по умолчанию берём стандартный протокол, кастомный тут ни к чему

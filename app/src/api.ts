@@ -23,6 +23,7 @@ export interface EntryView { kind: string; label: string; }
 export interface TotpView { label: string; code: string; digits: number; secondsLeft: number; period: number; }
 export interface Paper { kdf: string; sites: string[]; vault: string[]; }
 export interface SyncPreview { added: string[]; updated: string[]; }
+export interface ImportPreview { path: string; added: string[]; existing: number; skipped: number; }
 
 export const api = {
   status: () => invoke<Status>("status"),
@@ -62,4 +63,7 @@ export const api = {
   syncImport: (data: string, overwrite: boolean) => invoke<number>("sync_import", { data, overwrite }),
   autofillToken: () => invoke<string>("autofill_token"),
   paperExport: () => invoke<Paper>("paper_export"),
+  // импорт: диалог и чтение файла на стороне Rust, сюда приходят только метаданные
+  importPick: () => invoke<ImportPreview | null>("import_pick"),
+  importApply: (path: string) => invoke<number>("import_apply", { path }),
 };

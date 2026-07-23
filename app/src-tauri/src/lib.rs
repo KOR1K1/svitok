@@ -2,6 +2,9 @@
 //! Мастер-ключ держим тут, в Rust-состоянии. В JS через мост он не уходит.
 
 mod commands;
+// импорт файлов - только десктоп: телефону список переносится по QR
+#[cfg(not(any(target_os = "android", target_os = "ios")))]
+mod import;
 #[cfg(not(any(target_os = "android", target_os = "ios")))]
 mod ipc_server;
 #[cfg(target_os = "android")]
@@ -84,6 +87,12 @@ pub fn run() {
     {
         builder = builder.plugin(tauri_plugin_barcode_scanner::init());
     }
+    // файловый диалог для импорта; зовётся только из Rust-команды, поэтому
+    // JS-разрешений на него нет и содержимое файла в webview не попадает
+    #[cfg(not(any(target_os = "android", target_os = "ios")))]
+    {
+        builder = builder.plugin(tauri_plugin_dialog::init());
+    }
     builder
         .setup(|_app| {
             #[cfg(windows)]
@@ -133,7 +142,9 @@ pub fn run() {
             commands::sync_preview,
             commands::sync_import,
             commands::autofill_token,
-            commands::paper_export
+            commands::paper_export,
+            commands::import_pick,
+            commands::import_apply
         ])
         .run(tauri::generate_context!())
         .expect("ошибка запуска Tauri");

@@ -240,7 +240,10 @@ function settingsBody(refresh: () => void): HTMLElement[] {
       vaultAddBtn(t("settings.backup"), () => sheetBackup(), icons.save()),
       vaultAddBtn(t("settings.sync"), () => sheetSync(), icons.qr()),
       vaultAddBtn(t("settings.showSeed"), () => sheetShowSeed(), icons.doc()),
-      ...(IS_MOBILE ? [] : [vaultAddBtn(t("settings.extension"), () => sheetExtension(), icons.doc())]),
+      ...(IS_MOBILE ? [] : [
+        vaultAddBtn(t("settings.extension"), () => sheetExtension(), icons.doc()),
+        vaultAddBtn(t("settings.import"), () => startImport(), icons.save()),
+      ]),
     ]),
     h("div.stack.gap-3", {}, [h("div.t-section", {}, [t("settings.interface")]), ...interfaceRows]),
     h("div.stack.gap-2", {}, [
@@ -333,6 +336,43 @@ function sheetBackup() {
       pasteBlock,
       importBtn,
       err,
+    ]);
+  });
+}
+
+// импорт из других менеджеров (только десктоп; файл читает Rust)
+
+async function startImport() {
+  let preview;
+  try { preview = await api.importPick(); } catch (e) { toast(String(e), "err"); return; }
+  if (!preview) return; // диалог закрыли
+  const p = preview;
+  openSheet((close) => {
+    const list = h("div.stack.gap-1", { style: "max-height:40vh;overflow:auto" });
+    for (const name of p.added) list.append(h("div.t-body-2", {}, [name]));
+    const err = h("div.t-body-2.err", { style: "min-height:20px" });
+    const notes: string[] = [];
+    if (p.existing) notes.push(t("import.existing", { n: p.existing }));
+    if (p.skipped) notes.push(t("import.skipped", { n: p.skipped }));
+
+    const apply = h("button.btn.btn--seal.btn--full", {}, [t("import.apply", { n: p.added.length })]);
+    if (!p.added.length) (apply as HTMLButtonElement).disabled = true;
+    apply.addEventListener("click", async () => {
+      try {
+        const n = await api.importApply(p.path);
+        markBackupStale(); haptic("confirm"); confetti(); close();
+        toast(t("import.done", { n }), "ok");
+      } catch (e) { err.textContent = String(e); }
+    });
+
+    return h("div.stack.gap-3", {}, [
+      h("div.t-title", {}, [t("import.title")]),
+      h("div.t-body-2", { style: "line-height:1.6" }, [
+        p.added.length ? t("import.hint", { n: p.added.length }) : t("import.nothing"),
+      ]),
+      list,
+      ...(notes.length ? [h("div.t-body-2.faint", { style: "line-height:1.5" }, [notes.join(" · ")])] : []),
+      apply, err,
     ]);
   });
 }

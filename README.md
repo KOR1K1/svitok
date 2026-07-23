@@ -95,6 +95,7 @@ The full, implementation-level spec - enough to reimplement Svitok from scratch 
 - **Several accounts on one site** - add the same domain with different logins; each derives its own password, and autofill offers them as "site (login)"
 - **Domain aliases** - one service living on several domains (mirrors, regional TLDs) is one entry: the same account password fills on all of its domains
 - QR sync of your site list between devices (camera, no network)
+- Import from other managers (desktop): CSV exports of Chrome, Bitwarden, LastPass, KeePassXC, or Bitwarden JSON - domains and logins only, the old passwords are ignored by design; the file is read in Rust and never reaches the UI layer
 - Text backup (site list + encrypted vault) - paste it anywhere; it isn't a secret
 - Paper export you can copy by hand, with checksums to catch typos
 - Android: seed sealed in the Keystore, unlocked by biometrics only; screen capture forced on the seed and password screens
