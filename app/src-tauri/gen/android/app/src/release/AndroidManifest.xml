@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+     Release обязан быть офлайновым на уровне ОС, но манифесты библиотек
+     вливаются при сборке: телеметрия ML Kit (datatransport-backend-cct)
+     затаскивала INTERNET и ACCESS_NETWORK_STATE в готовый APK. Манифест
+     buildType старше библиотечных, поэтому remove здесь вырезает эти
+     разрешения из слитого манифеста насовсем. Проверять надо готовый APK
+     (aapt2 dump permissions), а не исходники: тут это уже обжигало.
+-->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
+    <uses-permission android:name="android.permission.INTERNET" tools:node="remove" />
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" tools:node="remove" />
+</manifest>
