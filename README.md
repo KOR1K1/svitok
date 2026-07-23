@@ -129,7 +129,7 @@ Grab a build from [**Releases**](https://github.com/KOR1K1/svitok/releases):
 - **Android** - the universal `.apk` (sideload; signed)
 - **Windows** - the NSIS `.exe` installer (unsigned, so SmartScreen may warn)
 - **macOS** - the universal `.dmg` (Intel and Apple Silicon)
-- **Linux** - the `.deb` (Debian/Ubuntu) or the portable `.AppImage` (most distros; the same binary runs under X11 and Wayland). NixOS is out-of-FHS, so run the AppImage via `appimage-run`/`nix-ld`, or build from source with Nix.
+- **Linux** - the `.deb` (Debian/Ubuntu) or the portable `.AppImage` (most distros; the same binary runs under X11 and Wayland). On NixOS (out-of-FHS), build natively with `nix develop` - the repo's `flake.nix` provides the dev shell - or run the AppImage via `appimage-run`/`nix-ld`.
 
 The desktop builds (Windows, macOS, Linux) are produced by CI on each version tag; the Android APK is built and signed separately. F-Droid submission is planned. There is intentionally no in-app auto-update over the network: an offline app phoning home to update itself would defeat the point.
 
@@ -199,6 +199,8 @@ npm run tauri build      # release build + installer (target/release/bundle/)
 ```
 
 Heads up: the KDF is deliberately slow, and a **debug** build makes it *painfully* slow. Always test unlock timing on a `--release` build.
+
+On NixOS, `nix develop` drops you into a shell with the Rust toolchain, Node, and the webkit/GTK dependencies (see `flake.nix`); then `npm run tauri build` as above.
 
 ### Android app
 
