@@ -126,11 +126,12 @@ installer will do this later); the extension itself lives in [`extension/`](exte
 
 Grab a build from [**Releases**](https://github.com/KOR1K1/svitok/releases):
 
-- **Android** - `Svitok-0.2.0-android.apk` (universal, sideload)
-- **Windows** - `Svitok-0.2.0-windows-setup.exe` (NSIS installer; unsigned, so SmartScreen may warn)
-- **Linux / macOS** - build from source for now (see below)
+- **Android** - the universal `.apk` (sideload; signed)
+- **Windows** - the NSIS `.exe` installer (unsigned, so SmartScreen may warn)
+- **macOS** - the universal `.dmg` (Intel and Apple Silicon)
+- **Linux** - the `.deb` (Debian/Ubuntu) or the portable `.AppImage` (most distros; the same binary runs under X11 and Wayland). NixOS is out-of-FHS, so run the AppImage via `appimage-run`/`nix-ld`, or build from source with Nix.
 
-F-Droid submission is planned. There is intentionally no in-app auto-update over the network: an offline app phoning home to update itself would defeat the point.
+The desktop builds (Windows, macOS, Linux) are produced by CI on each version tag; the Android APK is built and signed separately. F-Droid submission is planned. There is intentionally no in-app auto-update over the network: an offline app phoning home to update itself would defeat the point.
 
 ## Threat model
 

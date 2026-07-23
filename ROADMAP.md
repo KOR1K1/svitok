@@ -12,7 +12,7 @@ The things most likely to happen first.
 
 ## Bigger things
 
-- **macOS and Linux release binaries**, plus a tag-triggered build that attaches everything (win/mac/linux/android) to the release with checksums, automatically. Those two platforms are build-from-source only today.
+- **macOS, Linux, and Windows binaries** now come from a tag-triggered release workflow (`.github/workflows/release.yml`); Android is built and signed locally. Making those builds reproducible - the same bytes from the same source - is the separate line above.
 - **An outside look at the crypto.** It's hand-rolled and hasn't had a real audit - that's stated plainly in the README, and it should get fixed by someone who isn't me. Community review, or one of the free audit programs.
 
 ## Security odds and ends

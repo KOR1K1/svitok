@@ -1,0 +1,68 @@
+# Релиз по тегу: пушишь vX.Y.Z -> собираются desktop-бинари под win/mac/linux и
+# прикрепляются к релизу этого тега. На обычные пуши не реагирует.
+# Публичный репозиторий -> раннеры бесплатны, включая macOS.
+# Android собирается локально (ключ подписи не держим в CI) и кладётся отдельно.
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  desktop:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: macos-latest
+            args: "--target universal-apple-darwin"
+          - platform: ubuntu-22.04
+            args: ""
+          - platform: windows-latest
+            args: ""
+    runs-on: ${{ matrix.platform }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Linux dependencies
+        if: matrix.platform == 'ubuntu-22.04'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libwebkit2gtk-4.1-dev \
+            libappindicator3-dev \
+            librsvg2-dev \
+            patchelf
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.platform == 'macos-latest' && 'aarch64-apple-darwin,x86_64-apple-darwin' || '' }}
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: "./ -> target"
+
+      - name: Install frontend dependencies
+        run: npm install
+        working-directory: app
+
+      - uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          projectPath: app
+          tagName: ${{ github.ref_type == 'tag' && github.ref_name || 'nightly' }}
+          releaseName: "Svitok ${{ github.ref_type == 'tag' && github.ref_name || 'nightly' }}"
+          releaseBody: "Desktop builds. The Android APK is attached separately."
+          releaseDraft: true
+          prerelease: false
+          args: ${{ matrix.args }}
