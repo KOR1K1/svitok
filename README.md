@@ -4,8 +4,8 @@
 
 # Svitok
 
-**A paper-first, offline, deterministic password manager.**
-Your passwords aren't stored anywhere. They're recomputed from a random seed on paper and a phrase in your head.
+**A paper-first, offline, deterministic password manager - with autofill.**
+Your passwords aren't stored anywhere. They're recomputed from a random seed on paper and a phrase in your head, and filled straight into apps and browsers.
 
 [![License: GPL v3](https://img.shields.io/badge/License-GPLv3-4a3b28.svg)](LICENSE)
 ![Platforms](https://img.shields.io/badge/platforms-Android%20%7C%20Windows%20%7C%20macOS%20%7C%20Linux-1c1916)
@@ -92,6 +92,8 @@ The full, implementation-level spec - enough to reimplement Svitok from scratch 
 - Encrypted mini-vault for TOTP (2FA) codes, recovery codes, notes, foreign passwords
 - Per-site length and character policy, version counter for rotation
 - **Autofill** - a system autofill service on Android, a browser extension on desktop; passwords are derived per request, never stored (see [Autofill](#autofill))
+- **Several accounts on one site** - add the same domain with different logins; each derives its own password, and autofill offers them as "site (login)"
+- **Domain aliases** - one service living on several domains (mirrors, regional TLDs) is one entry: the same account password fills on all of its domains
 - QR sync of your site list between devices (camera, no network)
 - Text backup (site list + encrypted vault) - paste it anywhere; it isn't a secret
 - Paper export you can copy by hand, with checksums to catch typos
@@ -107,6 +109,15 @@ key and phrase never leave the app; only the finished password reaches the field
 Matching is by registrable domain (the same Public Suffix List the browsers use),
 so a saved `github.com` also fills `gist.github.com`, while `github.com.evil.com`
 correctly does not.
+
+Two things make this workable day to day. **Several accounts on one domain**: the
+login is part of the derivation formula, so entries that differ only by login
+already have different passwords - the suggestion list shows each as "site
+(login)" and you pick. **Domain aliases**: a service that lives on several
+domains (mirrors, regional TLDs) gets extra "other domains" on one entry; the
+entry matches on any of them and fills the password derived from its main
+domain. Aliases are matching metadata only - they never enter derivation, so
+adding or removing them can't change any password.
 
 - **Android** - Svitok registers as a system autofill service. Turn it on in
   Android settings, focus a login field, pick the Svitok suggestion, confirm with
@@ -127,7 +138,7 @@ installer will do this later); the extension itself lives in [`extension/`](exte
 Grab a build from [**Releases**](https://github.com/KOR1K1/svitok/releases):
 
 - **Android** - the universal `.apk` (sideload; signed)
-- **Windows** - the NSIS `.exe` installer (unsigned, so SmartScreen may warn)
+- **Windows** - the NSIS `.exe` installer (unsigned, so SmartScreen may warn), plus a portable `Svitok-*-windows.exe` - that one is what you byte-compare when [verifying a release](docs/REPRODUCIBLE.md)
 - **macOS** - the universal `.dmg` (Intel and Apple Silicon)
 - **Linux** - the `.deb` (Debian/Ubuntu) or the portable `.AppImage` (most distros; the same binary runs under X11 and Wayland). On NixOS (out-of-FHS), build natively with `nix develop` - the repo's `flake.nix` provides the dev shell - or run the AppImage via `appimage-run`/`nix-ld`.
 
@@ -148,7 +159,7 @@ Being honest here matters more than sounding strong.
 **What it can't protect against - and neither can anything else:**
 
 - **A compromised device.** If there's a keylogger, screen-logger, or malware with root on the machine where you type your phrase, it's game over. It grabs the phrase as you type and the seed when you show it. You cannot safely enter a secret on an infected endpoint - that's a limit of every architecture, not a bug in this one.
-- **A malicious build.** You trust the binary you install. Building it yourself (below) is the only real answer; reproducible builds are a TODO.
+- **A malicious build.** You trust the binary you install. Building it yourself is the real answer, and the builds are reproducible - same source, same bytes; see [`docs/REPRODUCIBLE.md`](docs/REPRODUCIBLE.md) for the recipe and how to verify a release.
 - **A weak phrase.** The KDF buys time, not miracles.
 - **Physical coercion**, an already-unlocked device in someone else's hands, or memory forensics during a live session.
 
@@ -173,8 +184,8 @@ Files on disk are written atomically (temp file + `fsync` + rename), so a power 
 
 You'll need:
 
-- **Rust** (stable) - <https://rustup.rs>
-- **Node.js** 20+ and npm
+- **Rust** - <https://rustup.rs>; the exact version is pinned in `rust-toolchain.toml`, rustup picks it up on its own
+- **Node.js** 22 (`.nvmrc`) and npm
 - **Tauri** prerequisites for your OS - <https://v2.tauri.app/start/prerequisites/>
 - For Android: **JDK 21**, Android **SDK** + **NDK** (r28), and the Rust Android targets
 
@@ -236,7 +247,7 @@ Good places to poke, audit, or contribute:
 
 - **`core/`** - the actual crypto. If you find a real problem here, that's the important one. Golden vectors in `core/tests/golden.rs` intentionally freeze the output format - if you change the scheme, they break, and every existing paper stops working. That's the point.
 - **KDF hardness** (`core/src/kdf.rs`) - parameters live on the paper, so they can grow for new seeds without breaking old ones. Worth revisiting as hardware moves.
-- **Reproducible builds** - not there yet. This is the single highest-value trust improvement.
+- **Reproducible builds** - the recipe lives in [`docs/REPRODUCIBLE.md`](docs/REPRODUCIBLE.md); independent verifications (and reports of any byte that differs) are very welcome.
 - **Autofill reach** - the desktop native host is registered by hand today; the installer should do it. Native apps match by package name, not domain yet.
 - **F-Droid metadata**, more languages, an animated multi-frame QR mode for very large lists.
 

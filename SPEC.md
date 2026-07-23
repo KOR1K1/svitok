@@ -120,8 +120,11 @@ Subkeys: `subkey(mk, name) = B2S(mk, "CTX:" || name)`.
 ## 5. Site password
 
 Input: site, login, counter v (all exact strings from your site list), and a
-policy: length plus character classes. The classes (order and contents are part
-of the algorithm - do not change them):
+policy: length plus character classes. These five values are the *only* inputs.
+A site list may carry extra bookkeeping next to an entry (an entry id, alias
+domains for autofill matching, a display label) - none of that enters this
+computation, so it can change freely without affecting any password. The classes
+(order and contents are part of the algorithm - do not change them):
 
 ```
 l: abcdefghijklmnopqrstuvwxyz      u: ABCDEFGHIJKLMNOPQRSTUVWXYZ

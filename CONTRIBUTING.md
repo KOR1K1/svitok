@@ -10,6 +10,7 @@ Svitok's whole promise is that a seed and phrase written down today still produc
 
 - Never change constants, domain-separation strings, byte order, or the KDF/derivation math in a way that alters output.
 - KDF *parameters* (`M`, `T`) are allowed to grow, because they're written on the paper next to the seed - new seeds can use stronger defaults while old ones keep reading with their own values. Changing the *default* is fine; changing the *algorithm* is not.
+- Anything added for matching or organizing - the entry id, alias domains, the display label - is metadata and must **never** become an input to derivation. The password is a function of site, login, counter and policy, nothing else. If a feature needs more inputs to `F`, it's the wrong design for this project.
 - If you think the scheme itself has a real flaw, that's an issue to discuss, not a quiet PR.
 
 Run the vectors before and after your change:
@@ -31,7 +32,7 @@ cd app && npm install && npm run tauri dev   # the GUI
 ## Where help is most useful
 
 - **Auditing `core/`** - the hand-rolled crypto. This is the important stuff. If you're a cryptographer, please be mean to it.
-- **Reproducible builds** - the biggest trust gap right now.
+- **Reproducible builds** - the recipe is in [`docs/REPRODUCIBLE.md`](docs/REPRODUCIBLE.md); independent verification runs on other machines are exactly the help this needs.
 - **Autofill** - registering the desktop native host from the installer, and matching native apps (not just web domains).
 - **Translations** - strings live in `app/src/i18n.ts`, two flat dictionaries (`ru`, `en`). Add a language by copying one.
 - **F-Droid metadata**, docs, and screenshots.

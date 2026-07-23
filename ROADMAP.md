@@ -6,9 +6,14 @@ A rough plan, not a promise. Priorities move around, and a good PR beats a line 
 
 The things most likely to happen first.
 
-- **Android autofill.** Right now you copy-paste passwords, and that's the main friction. A real autofill service - filling straight into apps and the browser - is what turns this from a "password calculator" into something you'd reach for every day. Biggest single UX win.
 - **Reproducible builds.** The README already calls this the highest-value trust improvement, and it is. "Build it yourself and get the exact same binary that's in the release" is the difference between trusting the code and trusting me. Also a prerequisite for doing F-Droid properly.
 - **Import from other managers.** A CSV / Bitwarden / KeePass export turned into your site list. Without it, a new user types everything in by hand, which nobody wants to do.
+
+## Shipped
+
+- **Autofill** (v0.2.0) - a system autofill service on Android, a browser extension plus native host on desktop. Passwords are derived per request and never stored.
+- **Multiple accounts per domain and domain aliases** (v0.3.0) - entries differ by login, one service on several domains matches everywhere; all matching metadata stays out of derivation.
+- Clipboard hardening (sensitive flag on Android, out of history on Windows), forced screen-capture protection on secret screens, `mlock`/`VirtualLock` for key material.
 
 ## Bigger things
 
@@ -19,9 +24,6 @@ The things most likely to happen first.
 
 Smaller hardening that's already noted in the code and the audit:
 
-- Keep copied passwords out of Windows clipboard history and Cloud Clipboard. Needs a native path; Android already marks them sensitive.
-- Force screen-capture protection on the seed and password screens no matter what the setting says.
-- `mlock` / `VirtualLock` so key material can't get swapped to disk on desktop.
 - On Linux, tell "keyring is unavailable" apart from "no seed here" so restore doesn't dead-end.
 
 ## F-Droid

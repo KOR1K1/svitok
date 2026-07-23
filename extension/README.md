@@ -50,4 +50,6 @@ one password. The key and phrase never leave the app.
 - The app must be running and unlocked to fill. Locked -> the extension shows
   "unlock Svitok".
 - Matching is by registrable domain (same rule as the app), so a saved
-  `github.com` matches `gist.github.com`.
+  `github.com` matches `gist.github.com`. An entry's extra "other domains" match
+  too, and several accounts on one domain show up as separate suggestions with
+  their logins.
