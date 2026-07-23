@@ -56,23 +56,24 @@ jobs:
         run: npm install
         working-directory: app
 
-      - id: tauri
-        uses: tauri-apps/tauri-action@v0
+      - uses: tauri-apps/tauri-action@v0
         with:
           projectPath: app
           args: ${{ matrix.args }}
 
-      # Переименовываем бандлы в Svitok-VERSION-platform.ext и складываем в dist/
+      # Переименовываем бандлы в Svitok-VERSION-platform.ext и складываем в dist/.
+      # Ищем через find (форвард-слеши, работает и в git bash на Windows), а не
+      # через artifactPaths - там на Windows backslash-пути, ломающие bash.
       - name: Rename artifacts
         shell: bash
         run: |
           version=$(jq -r .version app/src-tauri/tauri.conf.json)
           mkdir -p dist
-          echo '${{ steps.tauri.outputs.artifactPaths }}' | jq -r '.[]' | while read -r p; do
+          find target -type f \( -name '*.dmg' -o -name '*.deb' -o -name '*.AppImage' -o -name '*-setup.exe' \) | while read -r p; do
             case "$p" in
-              *.dmg)      cp "$p" "dist/Svitok-$version-macos.dmg" ;;
-              *.deb)      cp "$p" "dist/Svitok-$version-linux.deb" ;;
-              *.AppImage) cp "$p" "dist/Svitok-$version-linux.AppImage" ;;
+              *.dmg)       cp "$p" "dist/Svitok-$version-macos.dmg" ;;
+              *.deb)       cp "$p" "dist/Svitok-$version-linux.deb" ;;
+              *.AppImage)  cp "$p" "dist/Svitok-$version-linux.AppImage" ;;
               *-setup.exe) cp "$p" "dist/Svitok-$version-windows-setup.exe" ;;
             esac
           done
