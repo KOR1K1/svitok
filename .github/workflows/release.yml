@@ -1,7 +1,8 @@
-# Релиз по тегу: пушишь vX.Y.Z -> собираются desktop-бинари под win/mac/linux и
-# прикрепляются к релизу этого тега. На обычные пуши не реагирует.
+# Релиз по тегу: пушишь vX.Y.Z -> собираются desktop-бинари под win/mac/linux,
+# переименовываются в Svitok-VERSION-platform.ext, считается SHA256SUMS.txt и всё
+# кладётся в ЧЕРНОВИК релиза с описанием из аннотации тега. Ты добавляешь
+# подписанный Android APK (ключ держим локально, не в CI) и публикуешь.
 # Публичный репозиторий -> раннеры бесплатны, включая macOS.
-# Android собирается локально (ключ подписи не держим в CI) и кладётся отдельно.
 name: Release
 
 on:
@@ -14,7 +15,7 @@ permissions:
   contents: write
 
 jobs:
-  desktop:
+  build:
     strategy:
       fail-fast: false
       matrix:
@@ -55,14 +56,67 @@ jobs:
         run: npm install
         working-directory: app
 
-      - uses: tauri-apps/tauri-action@v0
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - id: tauri
+        uses: tauri-apps/tauri-action@v0
         with:
           projectPath: app
-          tagName: ${{ github.ref_type == 'tag' && github.ref_name || 'nightly' }}
-          releaseName: "Svitok ${{ github.ref_type == 'tag' && github.ref_name || 'nightly' }}"
-          releaseBody: "Desktop builds. The Android APK is attached separately."
-          releaseDraft: true
-          prerelease: false
           args: ${{ matrix.args }}
+
+      # Переименовываем бандлы в Svitok-VERSION-platform.ext и складываем в dist/
+      - name: Rename artifacts
+        shell: bash
+        run: |
+          version=$(jq -r .version app/src-tauri/tauri.conf.json)
+          mkdir -p dist
+          echo '${{ steps.tauri.outputs.artifactPaths }}' | jq -r '.[]' | while read -r p; do
+            case "$p" in
+              *.dmg)      cp "$p" "dist/Svitok-$version-macos.dmg" ;;
+              *.deb)      cp "$p" "dist/Svitok-$version-linux.deb" ;;
+              *.AppImage) cp "$p" "dist/Svitok-$version-linux.AppImage" ;;
+              *-setup.exe) cp "$p" "dist/Svitok-$version-windows-setup.exe" ;;
+            esac
+          done
+          ls -la dist
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: bundles-${{ matrix.platform }}
+          path: dist/*
+          if-no-files-found: error
+
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Collect and checksum
+        run: |
+          mkdir -p out
+          find artifacts -type f -exec cp {} out/ \;
+          cd out
+          sha256sum * > SHA256SUMS.txt
+          echo "--- artifacts ---"
+          cat SHA256SUMS.txt
+
+      - name: Release notes from tag annotation
+        run: |
+          if [ "${{ github.ref_type }}" = "tag" ]; then
+            git tag -l --format='%(contents)' "${{ github.ref_name }}" > notes.md
+          fi
+          if [ ! -s notes.md ]; then
+            printf 'Desktop builds below, with SHA256SUMS.txt.\n\nBuild the signed Android APK locally, add it here, append its checksum to SHA256SUMS.txt, finalize these notes, then publish.\n' > notes.md
+          fi
+          cat notes.md
+
+      - uses: softprops/action-gh-release@v2
+        with:
+          draft: true
+          name: "Svitok ${{ github.ref_type == 'tag' && github.ref_name || 'nightly' }}"
+          tag_name: ${{ github.ref_type == 'tag' && github.ref_name || 'nightly' }}
+          body_path: notes.md
+          files: out/*
