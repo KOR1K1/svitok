@@ -42,15 +42,31 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version-file: .nvmrc
 
-      - uses: dtolnay/rust-toolchain@stable
+      # версия тулчейна закреплена в rust-toolchain.toml - здесь она же,
+      # чтобы action поставил нужную сразу, а не stable с докачкой
+      - uses: dtolnay/rust-toolchain@1.95.0
         with:
           targets: ${{ matrix.platform == 'macos-latest' && 'aarch64-apple-darwin,x86_64-apple-darwin' || '' }}
 
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: "./ -> target"
+
+      # Воспроизводимая сборка (docs/REPRODUCIBLE.md): пути ремапятся в /build и
+      # /cargo, чтобы бинарь не зависел от каталога сборки; на Windows /Brepro
+      # заменяет таймстамп PE-заголовка детерминированным хэшем.
+      - name: Deterministic build flags
+        shell: bash
+        run: |
+          if [ "$RUNNER_OS" = "Windows" ]; then
+            ws=$(cygpath -w "$GITHUB_WORKSPACE")
+            cargo_home=$(cygpath -w "$HOME/.cargo")
+            echo "RUSTFLAGS=--remap-path-prefix=$ws=/build --remap-path-prefix=$cargo_home=/cargo -Clink-arg=/Brepro" >> "$GITHUB_ENV"
+          else
+            echo "RUSTFLAGS=--remap-path-prefix=$GITHUB_WORKSPACE=/build --remap-path-prefix=$HOME/.cargo=/cargo" >> "$GITHUB_ENV"
+          fi
 
       - name: Install frontend dependencies
         run: npm install
@@ -77,6 +93,11 @@ jobs:
               *-setup.exe) cp "$p" "dist/Svitok-$version-windows-setup.exe" ;;
             esac
           done
+          # портативный exe - то, что сверяют при воспроизводимой сборке:
+          # инсталлятор NSIS пакует таймстампы и побайтово не сходится
+          if [ -f target/release/svitok-app.exe ]; then
+            cp target/release/svitok-app.exe "dist/Svitok-$version-windows.exe"
+          fi
           ls -la dist
 
       - uses: actions/upload-artifact@v4
