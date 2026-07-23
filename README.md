@@ -33,6 +33,7 @@ The **seed** is 128 random bits you write on a piece of paper once. The **phrase
 - [How it works](#how-it-works)
 - [Screenshots](#screenshots)
 - [Features](#features)
+- [Autofill](#autofill)
 - [Install](#install)
 - [Threat model](#threat-model)
 - [Backups, sync, and not losing your data](#backups-sync-and-not-losing-your-data)
@@ -90,19 +91,43 @@ The full, implementation-level spec - enough to reimplement Svitok from scratch 
 - One seed + phrase = the same passwords on every device
 - Encrypted mini-vault for TOTP (2FA) codes, recovery codes, notes, foreign passwords
 - Per-site length and character policy, version counter for rotation
+- **Autofill** - a system autofill service on Android, a browser extension on desktop; passwords are derived per request, never stored (see [Autofill](#autofill))
 - QR sync of your site list between devices (camera, no network)
 - Text backup (site list + encrypted vault) - paste it anywhere; it isn't a secret
 - Paper export you can copy by hand, with checksums to catch typos
-- Android: seed sealed in the Keystore, unlocked by biometrics or your device PIN/pattern; screen capture blocked
-- Desktop: seed in the OS secret store (Windows Credential Manager / macOS Keychain / Linux Secret Service)
+- Android: seed sealed in the Keystore, unlocked by biometrics only; screen capture forced on the seed and password screens
+- Desktop: seed in the OS secret store (Windows Credential Manager / macOS Keychain / Linux Secret Service); copied passwords kept out of Windows clipboard history; key material locked into RAM (`mlock`/`VirtualLock`)
 - RU / EN, dark "ink" theme, separate mobile and desktop layouts
+
+## Autofill
+
+Because passwords are derived and not stored, autofill can't just read a value out
+of a database - it asks the app to compute one, once, for the site you're on. The
+key and phrase never leave the app; only the finished password reaches the field.
+Matching is by registrable domain (the same Public Suffix List the browsers use),
+so a saved `github.com` also fills `gist.github.com`, while `github.com.evil.com`
+correctly does not.
+
+- **Android** - Svitok registers as a system autofill service. Turn it on in
+  Android settings, focus a login field, pick the Svitok suggestion, confirm with
+  a fingerprint and your phrase, and it fills. Works in apps and (with one Chrome
+  setting) in the browser.
+- **Desktop** - a small browser extension talks to the running app over a local
+  socket through a thin native-messaging host that holds no secrets. If the app is
+  locked when you pick a suggestion, it comes to the front, asks for your phrase,
+  and then fills - no second click. The extension pairs with the app via a token
+  you copy once from Settings.
+
+Full setup for both platforms is in [`docs/AUTOFILL.md`](docs/AUTOFILL.md). The
+desktop extension currently needs the native host registered by hand (the
+installer will do this later); the extension itself lives in [`extension/`](extension/).
 
 ## Install
 
 Grab a build from [**Releases**](https://github.com/KOR1K1/svitok/releases):
 
-- **Android** - `Svitok-0.1.0-android.apk` (universal, sideload)
-- **Windows** - `Svitok-0.1.0-windows-setup.exe` (NSIS installer; unsigned, so SmartScreen may warn)
+- **Android** - `Svitok-0.2.0-android.apk` (universal, sideload)
+- **Windows** - `Svitok-0.2.0-windows-setup.exe` (NSIS installer; unsigned, so SmartScreen may warn)
 - **Linux / macOS** - build from source for now (see below)
 
 F-Droid submission is planned. There is intentionally no in-app auto-update over the network: an offline app phoning home to update itself would defeat the point.
@@ -116,8 +141,8 @@ Being honest here matters more than sounding strong.
 - **Cloud vault dumps.** There is no vault and no cloud. That whole class of "they leaked the password database" attacks doesn't apply.
 - **Password reuse.** Every site gets a unique derived password. Phishing one site doesn't hand over the rest; bump a counter to rotate.
 - **A stolen seed *without* the phrase.** The memory-hard KDF makes guessing the phrase expensive. This *slows* an attacker, it doesn't make it impossible - a weak phrase still loses, which is why the app enforces a minimum and blocks obvious ones.
-- **A stolen locked device.** The seed sits in the Android Keystore (unlocked by biometrics or device credential) or the OS secret store on desktop; the master key only exists in memory after you unlock, and never crosses into the UI/JS layer.
-- **Shoulder-surfing / screenshots.** Screen capture is blocked by default; passwords are hidden behind hold-to-reveal; the clipboard is marked sensitive on Android and auto-cleared.
+- **A stolen locked device.** The seed sits in the Android Keystore (unlocked by biometrics only) or the OS secret store on desktop; the master key only exists in memory after you unlock, is locked into RAM so it can't be swapped to disk, and never crosses into the UI/JS layer.
+- **Shoulder-surfing / screenshots.** Screen capture is blocked by default and forced on the seed and password screens even if you turned it off; passwords are hidden behind hold-to-reveal; the clipboard is marked sensitive on Android, kept out of clipboard history on Windows, and auto-cleared.
 
 **What it can't protect against - and neither can anything else:**
 
@@ -188,14 +213,16 @@ Release APKs are signed with a keystore referenced from `gen/android/keystore.pr
 
 ```
 core/          no_std crypto core, ZERO dependencies
-               blake2s, chacha20, sha1/hmac, kdf, base32, vault, derive, totp, wipe
+               blake2s, chacha20, sha1/hmac, kdf, base32, vault, derive, totp, wipe, domain (PSL)
 common/        std layer shared by CLI and app: sites.txt/vault.b32 storage, OS RNG, QR generator
 cli/           terminal version (svitok new / add / pw / totp / vault ...)
 app/           Tauri v2 app
   src/         frontend: vanilla TS + Vite, no framework (main.ts, ui.ts, api.ts, i18n.ts, scan.ts)
-  src-tauri/   Rust backend: IPC commands, seed storage, platform glue
-    gen/android/  Kotlin: Keystore + BiometricPrompt, FLAG_SECURE, edge-to-edge
-docs/          logo and screenshots; the paper spec is SPEC.md at the root
+  src-tauri/   Rust backend: IPC commands, seed storage, local socket for the extension, platform glue
+    gen/android/  Kotlin: Keystore + BiometricPrompt, FLAG_SECURE, autofill service + JNI bridge
+host/          native messaging host: relays the browser extension to the app over a local socket
+extension/     MV3 browser extension for desktop autofill
+docs/          logo, screenshots, autofill guide; the paper spec is SPEC.md at the root
 ```
 
 The master key lives in Rust state (`Mutex<Inner>`), is wiped on lock and on drop, and never crosses the IPC bridge into JS. Only derived results and metadata do.
@@ -207,7 +234,7 @@ Good places to poke, audit, or contribute:
 - **`core/`** - the actual crypto. If you find a real problem here, that's the important one. Golden vectors in `core/tests/golden.rs` intentionally freeze the output format - if you change the scheme, they break, and every existing paper stops working. That's the point.
 - **KDF hardness** (`core/src/kdf.rs`) - parameters live on the paper, so they can grow for new seeds without breaking old ones. Worth revisiting as hardware moves.
 - **Reproducible builds** - not there yet. This is the single highest-value trust improvement.
-- **Desktop clipboard on Windows** - passwords still land in clipboard history / Cloud Clipboard; excluding them needs a proper native path (the Android side already marks them sensitive).
+- **Autofill reach** - the desktop native host is registered by hand today; the installer should do it. Native apps match by package name, not domain yet.
 - **F-Droid metadata**, more languages, an animated multi-frame QR mode for very large lists.
 
 Open an issue before a big change so we don't both build the same thing two different ways. For where the project is headed, see the [roadmap](ROADMAP.md).

@@ -32,7 +32,7 @@ cd app && npm install && npm run tauri dev   # the GUI
 
 - **Auditing `core/`** - the hand-rolled crypto. This is the important stuff. If you're a cryptographer, please be mean to it.
 - **Reproducible builds** - the biggest trust gap right now.
-- **Windows clipboard** - excluding copied passwords from clipboard history / Cloud Clipboard needs a native path (Android already marks them sensitive).
+- **Autofill** - registering the desktop native host from the installer, and matching native apps (not just web domains).
 - **Translations** - strings live in `app/src/i18n.ts`, two flat dictionaries (`ru`, `en`). Add a language by copying one.
 - **F-Droid metadata**, docs, and screenshots.
 
