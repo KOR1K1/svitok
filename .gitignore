@@ -37,6 +37,9 @@ docs/_logo_preview.png
 docs/android-tauri-research.md
 .comment-inventory.mjs
 
+# релизные артефакты (уходят в GitHub Releases, не в репозиторий)
+/release/
+
 # редакторы и ОС
 .vscode/
 .idea/
