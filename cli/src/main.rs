@@ -75,7 +75,7 @@ fn print_help() {
         "svitok — бумажный менеджер паролей
 
   svitok new                      создать сид (показывается ОДИН раз — на листок!)
-  svitok add <сайт> [параметры]   добавить сайт: len=20 cls=luds login=я v=1 sym=._-
+  svitok add <сайт> [параметры]   добавить сайт: len=20 cls=luds login=я v=1 sym=._- alias=домен,домен label=имя
   svitok bump <сайт>              сменить пароль сайта после утечки (v+1)
   svitok ls                       список сайтов
   svitok pw <сайт>                показать пароль сайта
@@ -196,14 +196,13 @@ fn cmd_new(dir: &PathBuf) -> Result<(), String> {
 fn cmd_add(dir: &PathBuf, args: &[String]) -> Result<(), String> {
     let name = args.first().ok_or("укажите сайт: svitok add <сайт>")?.clone();
     let mut store = Store::load(dir)?;
-    if store.sites.iter().any(|s| s.name == name) {
-        return Err(format!("{name} уже есть (сменить пароль: svitok bump {name})"));
-    }
     let mut login = String::new();
     let mut counter = 1u32;
     let mut len = Policy::DEFAULT_LEN;
     let mut cls = "luds".to_string();
     let mut sym: Option<String> = None;
+    let mut aliases: Vec<String> = Vec::new();
+    let mut label = String::new();
     for t in &args[1..] {
         if let Some(v) = t.strip_prefix("login=") {
             login = v.to_string();
@@ -215,12 +214,21 @@ fn cmd_add(dir: &PathBuf, args: &[String]) -> Result<(), String> {
             cls = v.to_string();
         } else if let Some(v) = t.strip_prefix("sym=") {
             sym = Some(v.to_string());
+        } else if let Some(v) = t.strip_prefix("alias=") {
+            aliases = v.split(',').filter(|a| !a.is_empty()).map(str::to_string).collect();
+        } else if let Some(v) = t.strip_prefix("label=") {
+            label = v.to_string();
         } else {
             return Err(format!("непонятный параметр {t}"));
         }
     }
+    // тот же домен с другим логином - второй аккаунт, это нормально;
+    // дубль имя+логин дал бы тот же самый пароль
+    if store.sites.iter().any(|s| s.name == name && s.login == login) {
+        return Err(format!("{name} с этим логином уже есть (сменить пароль: svitok bump {name})"));
+    }
     let policy = Policy::from_classes(len, &cls, sym.as_deref()).ok_or("недопустимая политика")?;
-    let site = Site { name, login, counter, policy };
+    let site = Site { id: store.new_id()?, name, login, counter, policy, aliases, label };
     println!("добавлено: {}", site.to_line());
     store.sites.push(site);
     store.save()?;
@@ -230,12 +238,22 @@ fn cmd_add(dir: &PathBuf, args: &[String]) -> Result<(), String> {
 
 fn cmd_bump(dir: &PathBuf, args: &[String]) -> Result<(), String> {
     let name = args.first().ok_or("укажите сайт")?;
+    let login = args.iter().skip(1).find_map(|t| t.strip_prefix("login=")).map(str::to_string);
     let mut store = Store::load(dir)?;
-    let site = store
+    let hits: Vec<usize> = store
         .sites
-        .iter_mut()
-        .find(|s| &s.name == name)
-        .ok_or(format!("{name} не найден"))?;
+        .iter()
+        .enumerate()
+        .filter(|(_, s)| &s.name == name && login.as_ref().map_or(true, |l| &s.login == l))
+        .map(|(i, _)| i)
+        .collect();
+    if hits.is_empty() {
+        return Err(format!("{name} не найден"));
+    }
+    if hits.len() > 1 {
+        return Err(format!("{name}: несколько аккаунтов, уточните svitok bump {name} login=<логин>"));
+    }
+    let site = &mut store.sites[hits[0]];
     site.counter += 1;
     println!("{} → v={}  (пароль изменился; поменяйте его на сайте)", site.name, site.counter);
     let line = site.to_line();
@@ -257,7 +275,12 @@ fn cmd_ls(dir: &PathBuf) -> Result<(), String> {
 
 fn cmd_pw(store: &Store, mk: &[u8; 32], args: &[String]) -> Result<(), String> {
     let query = args.first().ok_or("укажите сайт")?;
-    let found = store.find(query);
+    let login = args.iter().skip(1).find_map(|t| t.strip_prefix("login=")).map(str::to_string);
+    let found: Vec<_> = store
+        .find(query)
+        .into_iter()
+        .filter(|s| login.as_ref().map_or(true, |l| &s.login == l))
+        .collect();
     match found.len() {
         0 => Err(format!("{query} не найден (svitok ls)")),
         1 => {
@@ -272,9 +295,9 @@ fn cmd_pw(store: &Store, mk: &[u8; 32], args: &[String]) -> Result<(), String> {
             Ok(())
         }
         _ => {
-            println!("уточните:");
+            println!("уточните (pw <сайт> login=<логин>):");
             for s in found {
-                println!("  {}", s.name);
+                println!("  {}  {}", s.name, s.login);
             }
             Ok(())
         }

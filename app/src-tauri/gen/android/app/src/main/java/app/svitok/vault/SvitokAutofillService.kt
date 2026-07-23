@@ -40,7 +40,21 @@ class SvitokAutofillService : AutofillService() {
         val webDomain: String?,
     )
 
-    private data class SiteLine(val name: String, val raw: String)
+    private data class SiteLine(
+        val name: String,
+        val login: String,
+        val aliases: List<String>,
+        val label: String,
+        val raw: String,
+    ) {
+        // подпись варианта: label вместо name, если задан; логин различает
+        // несколько аккаунтов на одном домене
+        fun display(): String {
+            val base = label.ifEmpty { name }
+            return if (login.isEmpty()) base else "$base ($login)"
+        }
+    }
+
     private data class Sites(val m: Int, val t: Int, val lines: List<SiteLine>)
 
     override fun onFillRequest(request: FillRequest, cancellationSignal: CancellationSignal, callback: FillCallback) {
@@ -64,9 +78,14 @@ class SvitokAutofillService : AutofillService() {
             callback.onSuccess(null)
             return
         }
+        // запись матчится по name и по каждому alias; алиасы - только матчинг,
+        // пароль всегда выводится из name (он в строке raw)
         val matches = sites.lines.filter { site ->
-            val c = Native.canonicalDomain(site.name)
-            (c.isNotEmpty() && c == canon) || (canon.isEmpty() && rawDomain != null && site.name.equals(rawDomain, true))
+            val domains = listOf(site.name) + site.aliases
+            domains.any { d ->
+                val c = Native.canonicalDomain(d)
+                (c.isNotEmpty() && c == canon) || (canon.isEmpty() && rawDomain != null && d.equals(rawDomain, true))
+            }
         }
         if (matches.isEmpty()) {
             callback.onSuccess(null)
@@ -84,7 +103,7 @@ class SvitokAutofillService : AutofillService() {
         val response = FillResponse.Builder()
         val ids = listOfNotNull(fields.usernameId, fields.passwordId)
         for ((i, site) in matches.withIndex()) {
-            val label = "Свиток · ${site.name}"
+            val label = "Свиток · ${site.display()}"
             val menu = RemoteViews(packageName, R.layout.autofill_row).apply {
                 setTextViewText(R.id.af_text, label)
             }
@@ -119,7 +138,7 @@ class SvitokAutofillService : AutofillService() {
     private fun authSender(site: SiteLine, m: Int, t: Int, fields: Fields, index: Int): android.content.IntentSender {
         val intent = Intent(this, AutofillAuthActivity::class.java).apply {
             putExtra(AutofillAuthActivity.EXTRA_SITE_LINE, site.raw)
-            putExtra(AutofillAuthActivity.EXTRA_SITE_NAME, site.name)
+            putExtra(AutofillAuthActivity.EXTRA_SITE_NAME, site.display())
             putExtra(AutofillAuthActivity.EXTRA_KDF_M, m)
             putExtra(AutofillAuthActivity.EXTRA_KDF_T, t)
             putExtra(AutofillAuthActivity.EXTRA_USERNAME_ID, fields.usernameId)
@@ -259,8 +278,22 @@ class SvitokAutofillService : AutofillService() {
                 }
                 continue
             }
-            val name = line.split(Regex("\\s+")).firstOrNull() ?: continue
-            lines.add(SiteLine(name, line))
+            val toks = line.split(Regex("\\s+"))
+            val name = toks.firstOrNull() ?: continue
+            var login = ""
+            var aliases = emptyList<String>()
+            var label = ""
+            for (tok in toks.drop(1)) {
+                when {
+                    tok.startsWith("login=") -> login = tok.removePrefix("login=")
+                    tok.startsWith("alias=") ->
+                        aliases = tok.removePrefix("alias=").split(',').filter { it.isNotEmpty() }
+                    // пробелы в label закодированы как %20 (см. store.rs)
+                    tok.startsWith("label=") ->
+                        label = tok.removePrefix("label=").replace("%20", " ").replace("%25", "%")
+                }
+            }
+            lines.add(SiteLine(name, login, aliases, label, line))
         }
         return Sites(m, t, lines)
     }

@@ -56,11 +56,14 @@ pub struct NewVault {
 
 #[derive(Serialize)]
 pub struct SiteView {
+    pub id: String,
     pub name: String,
     pub login: String,
     pub counter: u32,
     pub length: usize,
     pub classes: String,
+    pub aliases: Vec<String>,
+    pub label: String,
 }
 
 #[derive(Serialize)]
@@ -166,6 +169,52 @@ fn check_field(s: &str, what: &str) -> Result<(), String> {
         return Err(format!("{what}: пробелы недопустимы"));
     }
     Ok(())
+}
+
+/// Как запись зовётся в сообщениях: «имя (логин)», чтобы при нескольких
+/// аккаунтах на одном домене было понятно, о котором речь.
+fn display_site(s: &Site) -> String {
+    if s.login.is_empty() {
+        s.name.clone()
+    } else {
+        format!("{} ({})", s.name, s.login)
+    }
+}
+
+/// Мягкое предупреждение о пересечении доменов: страница совпадёт сразу с
+/// несколькими записями с разными доменами деривации - пароли будут разные.
+/// Несколько аккаунтов на одном name - штатный случай, о нём не предупреждаем.
+fn overlap_warnings(store: &Store, site: &Site) -> Vec<String> {
+    let mine: Vec<String> =
+        site.domains().filter_map(svitok_core::domain::canonical).collect();
+    store
+        .sites
+        .iter()
+        .filter(|o| o.id != site.id && o.name != site.name)
+        .filter(|o| {
+            o.domains()
+                .filter_map(svitok_core::domain::canonical)
+                .any(|c| mine.contains(&c))
+        })
+        .map(display_site)
+        .collect()
+}
+
+/// Алиасы приходят из формы: режем пустое, пробелы недопустимы (формат строки),
+/// запятая - разделитель в токене alias=, внутри домена ей делать нечего.
+fn check_aliases(aliases: &[String]) -> Result<(), String> {
+    for a in aliases {
+        check_field(a, "домен")?;
+        if a.contains(',') {
+            return Err(format!("{a}: запятая внутри домена"));
+        }
+    }
+    Ok(())
+}
+
+/// Табы и переводы строк в отображаемом имени сводим к пробелу.
+fn tidy_label(label: &str) -> String {
+    label.split_whitespace().collect::<Vec<_>>().join(" ")
 }
 
 fn unix_now() -> u64 {
@@ -411,15 +460,20 @@ pub fn list_sites(app: tauri::AppHandle, state: State<AppState>) -> Result<Vec<S
         .sites
         .iter()
         .map(|s| SiteView {
+            id: s.id.clone(),
             name: s.name.clone(),
             login: s.login.clone(),
             counter: s.counter,
             length: s.policy.length,
             classes: classes_str(&s.policy),
+            aliases: s.aliases.clone(),
+            label: s.label.clone(),
         })
         .collect())
 }
 
+/// Возвращает мягкие предупреждения о пересечении доменов с другими записями.
+/// Несколько аккаунтов на одном домене - штатный случай: различаются логином.
 #[tauri::command]
 pub fn add_site(
     app: tauri::AppHandle,
@@ -430,67 +484,96 @@ pub fn add_site(
     length: usize,
     classes: String,
     symbols: Option<String>,
-) -> Result<(), String> {
+    aliases: Vec<String>,
+    label: String,
+) -> Result<Vec<String>, String> {
     require_key(&state)?;
     check_field(&name, "имя")?;
     check_field(&login, "логин")?;
+    check_aliases(&aliases)?;
     let dir = dir_of(&app)?;
     let mut store = if Store::exists(&dir) { Store::load(&dir)? } else { Store::empty(&dir) };
-    if store.sites.iter().any(|s| s.name == name) {
-        return Err(format!("{name} уже есть"));
+    // одинаковая пара имя+логин дала бы буквально тот же пароль - это дубль;
+    // второй аккаунт на том же домене отличается логином и проходит свободно
+    if store.sites.iter().any(|s| s.name == name && s.login == login) {
+        return Err(format!("{name}: запись с этим логином уже есть"));
     }
     let policy = Policy::from_classes(length, &classes, symbols.as_deref())
         .ok_or("недопустимая политика")?;
-    store.sites.push(Site { name, login, counter: counter.max(1), policy });
-    store.save()
+    let site = Site {
+        id: store.new_id()?,
+        name,
+        login,
+        counter: counter.max(1),
+        policy,
+        aliases,
+        label: tidy_label(&label),
+    };
+    let warnings = overlap_warnings(&store, &site);
+    store.sites.push(site);
+    store.save()?;
+    Ok(warnings)
 }
 
 #[tauri::command]
-pub fn bump_site(app: tauri::AppHandle, state: State<AppState>, name: String) -> Result<u32, String> {
+pub fn bump_site(app: tauri::AppHandle, state: State<AppState>, id: String) -> Result<u32, String> {
     require_key(&state)?;
     let dir = dir_of(&app)?;
     let mut store = Store::load(&dir)?;
-    let s = store.sites.iter_mut().find(|s| s.name == name).ok_or("не найден")?;
+    let s = store.sites.iter_mut().find(|s| s.id == id).ok_or("не найден")?;
     s.counter += 1;
     let c = s.counter;
     store.save()?;
     Ok(c)
 }
 
-/// Изменить сайт: логин, счётчик, политику. Имя - ключ, его не трогаем.
-/// Смена любого поля меняет выводимый пароль, как и bump. Так и задумано.
+/// Изменить сайт: логин, счётчик, политику, алиасы, отображаемое имя.
+/// Ключ записи - id; name заморожен, он входит в деривацию. Смена логина,
+/// счётчика или политики меняет выводимый пароль, как и bump. Так и задумано;
+/// алиасы и label - метаданные, на пароль не влияют.
 #[tauri::command]
 pub fn update_site(
     app: tauri::AppHandle,
     state: State<AppState>,
-    name: String,
+    id: String,
     login: String,
     counter: u32,
     length: usize,
     classes: String,
     symbols: Option<String>,
-) -> Result<(), String> {
+    aliases: Vec<String>,
+    label: String,
+) -> Result<Vec<String>, String> {
     require_key(&state)?;
     check_field(&login, "логин")?;
+    check_aliases(&aliases)?;
     let dir = dir_of(&app)?;
     let mut store = Store::load(&dir)?;
     let policy = Policy::from_classes(length, &classes, symbols.as_deref())
         .ok_or("недопустимая политика")?;
-    let s = store.sites.iter_mut().find(|s| s.name == name).ok_or("не найден")?;
+    let idx = store.sites.iter().position(|s| s.id == id).ok_or("не найден")?;
+    if store.sites.iter().any(|s| s.id != id && s.name == store.sites[idx].name && s.login == login) {
+        return Err(format!("{}: запись с этим логином уже есть", store.sites[idx].name));
+    }
+    let s = &mut store.sites[idx];
     s.login = login;
     s.counter = counter.max(1);
     s.policy = policy;
-    store.save()
+    s.aliases = aliases;
+    s.label = tidy_label(&label);
+    let warnings = overlap_warnings(&store, &store.sites[idx]);
+    store.save()?;
+    Ok(warnings)
 }
 
 /// Удалить сайт из списка. Секреты сейфа при этом не трогаем.
 #[tauri::command]
-pub fn remove_site(app: tauri::AppHandle, state: State<AppState>, name: String) -> Result<(), String> {
+pub fn remove_site(app: tauri::AppHandle, state: State<AppState>, id: String) -> Result<(), String> {
     require_key(&state)?;
     let dir = dir_of(&app)?;
     let mut store = Store::load(&dir)?;
     let before = store.sites.len();
-    store.sites.retain(|s| s.name != name);
+    store.sites.retain(|s| s.id != id);
     if store.sites.len() == before {
         return Err("не найден".into());
     }
@@ -543,12 +626,12 @@ pub async fn show_seed(
 pub fn derive_password(
     app: tauri::AppHandle,
     state: State<AppState>,
-    name: String,
+    id: String,
 ) -> Result<PasswordView, String> {
     let mk = require_key(&state)?;
     let dir = dir_of(&app)?;
     let store = Store::load(&dir)?;
-    let s = store.sites.iter().find(|s| s.name == name).ok_or("не найден")?;
+    let s = store.sites.iter().find(|s| s.id == id).ok_or("не найден")?;
     let password = site_password(&mk, &s.name, &s.login, s.counter, &s.policy)
         .ok_or("негодная политика пароля у этого сайта")?;
     Ok(PasswordView {
@@ -924,6 +1007,18 @@ fn parse_sync(data: &str) -> Result<Vec<Site>, String> {
     Ok(incoming)
 }
 
+/// С кем в списке сливается входящая запись: по id, если оба его знают
+/// (устройства с этой версией шлют id в QR), иначе по паре имя+логин -
+/// на неё падают переносы из старых версий, где id ещё не было.
+fn merge_target(store: &Store, site: &Site) -> Option<usize> {
+    if !site.id.is_empty() {
+        if let Some(i) = store.sites.iter().position(|s| s.id == site.id) {
+            return Some(i);
+        }
+    }
+    store.sites.iter().position(|s| s.name == site.name && s.login == site.login)
+}
+
 /// Что даст импорт из этого QR: какие сайты добавятся, какие перезапишутся.
 /// Обновление существующего меняет выводимый пароль, поэтому диф показываем
 /// пользователю до применения, а не переписываем молча.
@@ -936,10 +1031,10 @@ pub fn sync_preview(app: tauri::AppHandle, state: State<AppState>, data: String)
     let mut added = Vec::new();
     let mut updated = Vec::new();
     for site in &incoming {
-        if store.sites.iter().any(|s| s.name == site.name) {
-            updated.push(site.name.clone());
+        if merge_target(&store, site).is_some() {
+            updated.push(display_site(site));
         } else {
-            added.push(site.name.clone());
+            added.push(display_site(site));
         }
     }
     Ok(SyncPreview { added, updated })
@@ -955,15 +1050,22 @@ pub fn sync_import(app: tauri::AppHandle, state: State<AppState>, data: String, 
     let dir = dir_of(&app)?;
     let mut store = if Store::exists(&dir) { Store::load(&dir)? } else { Store::empty(&dir) };
     let mut changed = 0usize;
-    for site in incoming {
-        match store.sites.iter_mut().find(|s| s.name == site.name) {
-            Some(existing) => {
+    for mut site in incoming {
+        match merge_target(&store, &site) {
+            Some(i) => {
                 if overwrite {
-                    *existing = site;
+                    if site.id.is_empty() {
+                        // перенос со старой версии без id - не теряем свой
+                        site.id = store.sites[i].id.clone();
+                    }
+                    store.sites[i] = site;
                     changed += 1;
                 }
             }
             None => {
+                if site.id.is_empty() {
+                    site.id = store.new_id()?;
+                }
                 store.sites.push(site);
                 changed += 1;
             }

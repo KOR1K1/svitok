@@ -8,10 +8,19 @@ use svitok_core::kdf::KdfParams;
 
 #[derive(Clone, Debug)]
 pub struct Site {
+    /// Стабильный ключ записи для UI, правок и синхронизации. Метаданные:
+    /// в деривацию не входит, менять его безопасно для паролей.
+    pub id: String,
+    /// Домен деривации. Заморожен: он входит в формулу пароля.
     pub name: String,
     pub login: String,
     pub counter: u32,
     pub policy: Policy,
+    /// Дополнительные домены для матчинга автозаполнения (lolz.live к lolz.guru).
+    /// Только матчинг, в деривацию не входят - пароль всегда выводится из name.
+    pub aliases: Vec<String>,
+    /// Отображаемое имя. Пустое - показываем name.
+    pub label: String,
 }
 
 pub struct Store {
@@ -67,7 +76,43 @@ impl Store {
             let site = Site::from_line(line).map_err(|e| format!("sites.txt:{}: {e}", ln + 1))?;
             sites.push(site);
         }
-        Ok(Store { dir: dir.to_path_buf(), kdf, sites, check })
+        let mut store = Store { dir: dir.to_path_buf(), kdf, sites, check };
+        // Списки из старых версий (и записанные с листка руками) идут без id.
+        // Раздаём id прямо при загрузке и сразу сохраняем: команды перечитывают
+        // файл на каждый вызов, и не записанный на диск id жил бы один вызов.
+        // Не сохранилось (файловая система только на чтение) - работаем как есть.
+        if store.assign_missing_ids() {
+            let _ = store.save();
+        }
+        Ok(store)
+    }
+
+    /// Новый id, которого ещё нет в списке: 4 случайных байта в hex.
+    pub fn new_id(&self) -> Result<String, String> {
+        loop {
+            let mut raw = [0u8; 4];
+            crate::osrng::os_random(&mut raw).map_err(|e| e.to_string())?;
+            let id: String = raw.iter().map(|b| format!("{b:02x}")).collect();
+            if !self.sites.iter().any(|s| s.id == id) {
+                return Ok(id);
+            }
+        }
+    }
+
+    fn assign_missing_ids(&mut self) -> bool {
+        let mut changed = false;
+        for i in 0..self.sites.len() {
+            if self.sites[i].id.is_empty() {
+                match self.new_id() {
+                    Ok(id) => {
+                        self.sites[i].id = id;
+                        changed = true;
+                    }
+                    Err(_) => break, // без ГСЧ оставляем как есть - добавление сайта откажет громко
+                }
+            }
+        }
+        changed
     }
 
     pub fn save(&self) -> Result<(), String> {
@@ -169,16 +214,21 @@ pub fn atomic_write(path: &Path, contents: &[u8]) -> Result<(), String> {
 }
 
 impl Site {
-    /// Разбирает строку списка без ведущего «#»: «имя login=… v=… len=… cls=… sym=…».
-    /// Умолчания: login пустой, v=1, len=DEFAULT, cls=luds. Имя - первый токен, без пробелов.
+    /// Разбирает строку списка без ведущего «#»: «имя login=… v=… len=… cls=…
+    /// sym=… alias=… label=… id=…». Умолчания: login пустой, v=1, len=DEFAULT,
+    /// cls=luds. Имя - первый токен, без пробелов. alias - домены через запятую,
+    /// label - с пробелами в виде %20, id может отсутствовать (старые списки).
     pub fn from_line(line: &str) -> Result<Site, String> {
         let mut toks = line.split_whitespace();
         let name = toks.next().ok_or("пустая строка сайта")?.to_string();
+        let mut id = String::new();
         let mut login = String::new();
         let mut counter = 1u32;
         let mut len = Policy::DEFAULT_LEN;
         let mut cls = "luds".to_string();
         let mut sym: Option<String> = None;
+        let mut aliases: Vec<String> = Vec::new();
+        let mut label = String::new();
         for t in toks {
             if let Some(v) = t.strip_prefix("login=") {
                 login = v.to_string();
@@ -190,13 +240,19 @@ impl Site {
                 cls = v.to_string();
             } else if let Some(v) = t.strip_prefix("sym=") {
                 sym = Some(v.to_string());
+            } else if let Some(v) = t.strip_prefix("alias=") {
+                aliases = v.split(',').filter(|a| !a.is_empty()).map(str::to_string).collect();
+            } else if let Some(v) = t.strip_prefix("label=") {
+                label = decode_label(v);
+            } else if let Some(v) = t.strip_prefix("id=") {
+                id = v.to_string();
             } else {
                 return Err(format!("непонятный параметр {t}"));
             }
         }
         let policy =
             Policy::from_classes(len, &cls, sym.as_deref()).ok_or("недопустимая политика")?;
-        Ok(Site { name, login, counter, policy })
+        Ok(Site { id, name, login, counter, policy, aliases, label })
     }
 
     pub fn to_line(&self) -> String {
@@ -229,8 +285,60 @@ impl Site {
         if let Some(cs) = &self.policy.custom_symbols {
             s.push_str(&format!(" sym={}", String::from_utf8_lossy(cs)));
         }
+        if !self.aliases.is_empty() {
+            s.push_str(&format!(" alias={}", self.aliases.join(",")));
+        }
+        if !self.label.is_empty() {
+            s.push_str(&format!(" label={}", encode_label(&self.label)));
+        }
+        if !self.id.is_empty() {
+            s.push_str(&format!(" id={}", self.id));
+        }
         s
     }
+
+    /// Все домены, по которым запись матчится: name плюс aliases.
+    pub fn domains(&self) -> impl Iterator<Item = &str> {
+        core::iter::once(self.name.as_str()).chain(self.aliases.iter().map(String::as_str))
+    }
+
+    /// Матчится ли запись на канонический (registrable) домен страницы.
+    pub fn matches_domain(&self, canon: &str) -> bool {
+        self.domains()
+            .any(|d| svitok_core::domain::canonical(d).as_deref() == Some(canon))
+    }
+}
+
+/// Строка списка режется по пробелам, поэтому пробелы внутри label кодируем:
+/// «%» -> %25, пробельный символ -> %20. Остальное как есть - читаемо на бумаге.
+fn encode_label(s: &str) -> String {
+    let mut out = String::with_capacity(s.len());
+    for c in s.chars() {
+        match c {
+            '%' => out.push_str("%25"),
+            c if c.is_whitespace() => out.push_str("%20"),
+            c => out.push(c),
+        }
+    }
+    out
+}
+
+fn decode_label(s: &str) -> String {
+    let mut out = String::with_capacity(s.len());
+    let mut rest = s;
+    while let Some(c) = rest.chars().next() {
+        if rest.starts_with("%20") {
+            out.push(' ');
+            rest = &rest[3..];
+        } else if rest.starts_with("%25") {
+            out.push('%');
+            rest = &rest[3..];
+        } else {
+            out.push(c);
+            rest = &rest[c.len_utf8()..];
+        }
+    }
+    out
 }
 
 #[cfg(test)]
@@ -251,6 +359,8 @@ mod tests {
         roundtrip("pin len=6 cls=d");
         // cls=luds - умолчание, в каноничном виде опускаем; символы задаёт sym=.
         roundtrip("wifi sym=!@#$%");
+        roundtrip("lolz.guru login=me alias=lolz.live,zelenka.guru id=a1b2c3d4");
+        roundtrip("gmail.com login=work@gmail.com label=Рабочая%20почта id=00ff00ff");
     }
 
     #[test]
@@ -259,5 +369,44 @@ mod tests {
         assert_eq!(s.counter, 1);
         assert!(!s.to_line().contains("v="));
         assert!(!s.to_line().contains("cls="));
+        // строка без новых токенов - как из старых версий - обходится без них
+        assert!(s.id.is_empty() && s.aliases.is_empty() && s.label.is_empty());
+    }
+
+    #[test]
+    fn label_percent_coding() {
+        assert_eq!(encode_label("две части"), "две%20части");
+        assert_eq!(decode_label("две%20части"), "две части");
+        // литеральный процент переживает round-trip
+        assert_eq!(decode_label(&encode_label("скидка 100%20")), "скидка 100%20");
+    }
+
+    #[test]
+    fn load_assigns_ids_to_legacy_lists() {
+        let dir = std::env::temp_dir().join(format!("svitok-idmig-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(Store::sites_path(&dir), "# kdf M17 T21\nmega.nz\ngithub.com login=me\n").unwrap();
+
+        let store = Store::load(&dir).expect("load");
+        assert!(store.sites.iter().all(|s| s.id.len() == 8), "id раздаются при загрузке");
+        assert_ne!(store.sites[0].id, store.sites[1].id);
+
+        // id записались на диск: повторная загрузка видит те же самые
+        let again = Store::load(&dir).expect("reload");
+        assert_eq!(again.sites[0].id, store.sites[0].id);
+        assert_eq!(again.sites[1].id, store.sites[1].id);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn alias_matching() {
+        let s = Site::from_line("lolz.guru alias=lolz.live,lzt.market").unwrap();
+        assert!(s.matches_domain("lolz.guru"));
+        assert!(s.matches_domain("lolz.live"));
+        assert!(s.matches_domain("lzt.market"));
+        assert!(!s.matches_domain("lolz.market"));
+        // канонизация: поддомен алиаса сводится к тому же registrable domain
+        assert_eq!(svitok_core::domain::canonical("forum.lolz.live").as_deref(), Some("lolz.live"));
     }
 }

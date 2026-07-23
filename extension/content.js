@@ -94,7 +94,8 @@
       row.className = "svitok-af__row";
       const title = document.createElement("div");
       title.className = "svitok-af__name";
-      title.textContent = "Свиток · " + m.name;
+      // label - отображаемое имя записи; несколько аккаунтов различаются логином
+      title.textContent = "Свиток · " + (m.label || m.name);
       row.appendChild(title);
       if (m.login) {
         const sub = document.createElement("div");
@@ -121,7 +122,7 @@
     note(field, locked ? "Разблокируйте Свиток…" : "Заполняю…");
     let resp;
     try {
-      resp = await chrome.runtime.sendMessage({ op: "fill", origin, name: m.name });
+      resp = await chrome.runtime.sendMessage({ op: "fill", origin, id: m.id });
     } catch {
       removeDropdown();
       return;

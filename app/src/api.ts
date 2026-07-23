@@ -17,7 +17,7 @@ export const clipClear = () => invoke<void>("clip_clear");
 export interface Status { hasVault: boolean; hasSeed: boolean; unlocked: boolean; }
 export interface NewVault { fingerprint: string; seedPaper: string[]; }
 export interface Unlocked { fingerprint: string; }
-export interface SiteView { name: string; login: string; counter: number; length: number; classes: string; }
+export interface SiteView { id: string; name: string; login: string; counter: number; length: number; classes: string; aliases: string[]; label: string; }
 export interface PasswordView { name: string; login: string; counter: number; password: string; }
 export interface EntryView { kind: string; label: string; }
 export interface TotpView { label: string; code: string; digits: number; secondsLeft: number; period: number; }
@@ -33,14 +33,15 @@ export const api = {
   destroyVault: () => invoke<void>("destroy_vault"),
 
   listSites: () => invoke<SiteView[]>("list_sites"),
-  addSite: (name: string, login: string, counter: number, length: number, classes: string, symbols: string | null) =>
-    invoke<void>("add_site", { name, login, counter, length, classes, symbols }),
-  bumpSite: (name: string) => invoke<number>("bump_site", { name }),
-  updateSite: (name: string, login: string, counter: number, length: number, classes: string, symbols: string | null) =>
-    invoke<void>("update_site", { name, login, counter, length, classes, symbols }),
-  removeSite: (name: string) => invoke<void>("remove_site", { name }),
+  // add/update возвращают мягкие предупреждения о пересечении доменов с другими записями
+  addSite: (name: string, login: string, counter: number, length: number, classes: string, symbols: string | null, aliases: string[], label: string) =>
+    invoke<string[]>("add_site", { name, login, counter, length, classes, symbols, aliases, label }),
+  bumpSite: (id: string) => invoke<number>("bump_site", { id }),
+  updateSite: (id: string, login: string, counter: number, length: number, classes: string, symbols: string | null, aliases: string[], label: string) =>
+    invoke<string[]>("update_site", { id, login, counter, length, classes, symbols, aliases, label }),
+  removeSite: (id: string) => invoke<void>("remove_site", { id }),
   showSeed: (phrase: string) => invoke<string[]>("show_seed", { phrase }),
-  derivePassword: (name: string) => invoke<PasswordView>("derive_password", { name }),
+  derivePassword: (id: string) => invoke<PasswordView>("derive_password", { id }),
 
   vaultList: () => invoke<EntryView[]>("vault_list"),
   totpList: () => invoke<string[]>("totp_list"),

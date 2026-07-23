@@ -1013,7 +1013,12 @@ async function renderSites(content: HTMLElement) {
   const draw = (filter: string) => {
     clear(list);
     const q = filter.trim().toLowerCase();
-    const shown = sites.filter((s) => !q || s.name.toLowerCase().includes(q) || s.login.toLowerCase().includes(q));
+    const shown = sites.filter((s) =>
+      !q ||
+      s.name.toLowerCase().includes(q) ||
+      s.login.toLowerCase().includes(q) ||
+      s.label.toLowerCase().includes(q) ||
+      s.aliases.some((a) => a.toLowerCase().includes(q)));
     if (!shown.length) {
       if (sites.length) {
         list.append(h("div.empty", {}, [t("sites.notFound")]));
@@ -1034,11 +1039,14 @@ async function renderSites(content: HTMLElement) {
 }
 
 function siteRow(s: SiteView, num: number, content: HTMLElement): HTMLElement {
-  const sub = s.login ? s.login : t("sites.noLogin");
+  // label - отображаемое имя; при нём домен деривации уходит в подзаголовок
+  const title = s.label || s.name;
+  const subParts = [s.label ? s.name : "", s.login].filter(Boolean);
+  const sub = subParts.length ? subParts.join(" · ") : t("sites.noLogin");
   const row = h("div.row.tap", {}, [
     h("div.row__num", {}, [String(num).padStart(2, "0")]),
     h("div.row__main", {}, [
-      h("div.row__name", {}, [s.name]),
+      h("div.row__name", {}, [title]),
       h("div.row__sub", {}, [sub]),
     ]),
     h("div.row__side", {}, [s.counter > 1 ? h("span.faint", {}, ["v" + s.counter]) : h("span")]),
@@ -1326,7 +1334,7 @@ function sheetPassword(s: SiteView, refresh: () => void) {
     let pw = "";
 
     const ensure = async (): Promise<string> => {
-      if (!pw) pw = (await api.derivePassword(s.name)).password;
+      if (!pw) pw = (await api.derivePassword(s.id)).password;
       return pw;
     };
     let held = false;
@@ -1370,7 +1378,7 @@ function sheetPassword(s: SiteView, refresh: () => void) {
     qrBtn.addEventListener("click", async () => sheetQr(await ensure()));
     const bumpBtn = h("button.btn.btn--ghost.btn--full", {}, [icons.bump(), t("pw.bump", { n: s.counter })]);
     bumpBtn.addEventListener("click", async () => {
-      try { const c = await api.bumpSite(s.name); markBackupStale(); toast(t("pw.bumped", { n: c }), "ok"); close(); refresh(); }
+      try { const c = await api.bumpSite(s.id); markBackupStale(); toast(t("pw.bumped", { n: c }), "ok"); close(); refresh(); }
       catch (e) { toast(String(e), "err"); }
     });
     const editBtn = h("button.btn.btn--ghost.btn--full", {}, [icons.edit(), t("pw.edit")]);
@@ -1378,8 +1386,11 @@ function sheetPassword(s: SiteView, refresh: () => void) {
 
     void reveal(false);
     return h("div.stack.gap-3", {}, [
-      h("div.t-title", {}, [s.name]),
-      h("div.t-body-2", {}, [s.login ? t("pw.login", { l: s.login }) : t("pw.noLogin"), "  ·  " + t("pw.length", { n: s.length })]),
+      h("div.t-title", {}, [s.label || s.name]),
+      h("div.t-body-2", {}, [
+        (s.label ? s.name + "  ·  " : "") + (s.login ? t("pw.login", { l: s.login }) : t("pw.noLogin")),
+        "  ·  " + t("pw.length", { n: s.length }),
+      ]),
       value,
       copyBtn, holdBtn,
       h("div", { style: "display:flex;gap:8px" }, [bigBtn, qrBtn]),
@@ -1421,6 +1432,8 @@ function sheetAddSite(refresh: () => void, edit?: SiteView) {
     const name = h("input.field", { placeholder: t("addsite.namePh"), autocomplete: "off", value: edit?.name ?? "" }) as HTMLInputElement;
     if (isEdit) { name.readOnly = true; name.style.opacity = "0.6"; }
     const login = h("input.field", { placeholder: t("addsite.loginPh"), autocomplete: "off", value: edit?.login ?? "" }) as HTMLInputElement;
+    const aliases = h("input.field", { placeholder: t("addsite.aliasPh"), autocomplete: "off", value: edit?.aliases.join(", ") ?? "" }) as HTMLInputElement;
+    const label = h("input.field", { placeholder: t("addsite.labelPh"), autocomplete: "off", value: edit?.label ?? "" }) as HTMLInputElement;
     const len = h("input.field.mono", { type: "number", value: String(edit?.length ?? 20), inputmode: "numeric" }) as HTMLInputElement;
     const src = edit?.classes ?? "luds";
     const cls = { l: src.includes("l"), u: src.includes("u"), d: src.includes("d"), s: src.includes("s") };
@@ -1441,16 +1454,24 @@ function sheetAddSite(refresh: () => void, edit?: SiteView) {
       const classes = (["l", "u", "d", "s"] as const).filter((k) => cls[k]).join("");
       if (!name.value.trim()) { err.textContent = t("addsite.errName"); return; }
       if (!classes) { err.textContent = t("addsite.errClass"); return; }
+      // «другие домены»: через запятую или пробел, пустое выкидываем
+      const aliasList = aliases.value.split(/[\s,]+/).map((a) => a.trim()).filter(Boolean);
       try {
-        if (isEdit) await api.updateSite(edit!.name, login.value.trim(), edit!.counter, Number(len.value) || 20, classes, null);
-        else await api.addSite(name.value.trim(), login.value.trim(), 1, Number(len.value) || 20, classes, null);
+        const warnings = isEdit
+          ? await api.updateSite(edit!.id, login.value.trim(), edit!.counter, Number(len.value) || 20, classes, null, aliasList, label.value.trim())
+          : await api.addSite(name.value.trim(), login.value.trim(), 1, Number(len.value) || 20, classes, null, aliasList, label.value.trim());
         markBackupStale(); haptic("confirm"); close(); refresh();
+        // пересечение доменов с другой записью - не ошибка, но пользователю
+        // стоит знать, что на той странице предложатся обе (с разными паролями)
+        if (warnings.length) toast(t("addsite.overlap", { sites: warnings.join(", ") }));
       } catch (e) { err.textContent = String(e); }
     });
 
     const children: (Node | string)[] = [
       h("div.t-title", {}, [isEdit ? t("addsite.editTitle") : t("addsite.title")]),
       name, login,
+      h("div.t-body-2", {}, [t("addsite.aliasLabel")]), aliases,
+      label,
       h("div.t-body-2", {}, [t("addsite.lenLabel")]), len,
       h("div.t-body-2", {}, [t("addsite.charsLabel")]), chips,
     ];
@@ -1463,7 +1484,7 @@ function sheetAddSite(refresh: () => void, edit?: SiteView) {
         clear(delWrap);
         const yes = h("button.btn.btn--danger.btn--full", {}, [t("addsite.deleteConfirm")]);
         yes.addEventListener("click", async () => {
-          try { await api.removeSite(edit!.name); markBackupStale(); haptic("confirm"); close(); refresh(); }
+          try { await api.removeSite(edit!.id); markBackupStale(); haptic("confirm"); close(); refresh(); }
           catch (e) { err.textContent = String(e); }
         });
         const no = h("button.btn.btn--ghost.btn--full", {}, [t("common.cancel")]);

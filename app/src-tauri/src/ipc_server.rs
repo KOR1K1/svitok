@@ -78,8 +78,8 @@ fn do_match(app: &tauri::AppHandle, v: &serde_json::Value) -> Vec<u8> {
     let matches: Vec<_> = store
         .sites
         .iter()
-        .filter(|s| svitok_core::domain::canonical(&s.name).as_deref() == Some(canon.as_str()))
-        .map(|s| serde_json::json!({ "name": s.name, "login": s.login }))
+        .filter(|s| s.matches_domain(&canon))
+        .map(|s| serde_json::json!({ "id": s.id, "name": s.name, "login": s.login, "label": s.label }))
         .collect();
     let locked = current_key(app).is_none();
     serde_json::json!({ "ok": true, "locked": locked, "matches": matches }).to_string().into_bytes()
@@ -92,7 +92,10 @@ fn fill(app: &tauri::AppHandle, v: &serde_json::Value) -> Vec<u8> {
         Ok(x) => x,
         Err(e) => return e,
     };
-    let only = v.get("name").and_then(|x| x.as_str());
+    // выбор конкретной записи: id из свежего расширения; name понимаем ради
+    // расширений прошлой версии (до многоаккаунтности имя и было ключом)
+    let only_id = v.get("id").and_then(|x| x.as_str());
+    let only_name = v.get("name").and_then(|x| x.as_str());
     let mut mk = match key_or_wait(app) {
         Some(k) => k,
         None => return err("locked"),
@@ -106,10 +109,14 @@ fn fill(app: &tauri::AppHandle, v: &serde_json::Value) -> Vec<u8> {
     };
     let mut matches = Vec::new();
     for s in &store.sites {
-        if svitok_core::domain::canonical(&s.name).as_deref() != Some(canon.as_str()) {
+        if !s.matches_domain(&canon) {
             continue;
         }
-        if let Some(name) = only {
+        if let Some(id) = only_id {
+            if s.id != id {
+                continue;
+            }
+        } else if let Some(name) = only_name {
             if s.name != name {
                 continue;
             }

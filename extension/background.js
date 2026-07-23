@@ -24,7 +24,7 @@ function callHost(message) {
 chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
   if (msg && (msg.op === "match" || msg.op === "fill")) {
     chrome.storage.local.get("token").then(({ token }) => {
-      callHost({ op: msg.op, origin: msg.origin, name: msg.name, token: token || "" }).then(sendResponse);
+      callHost({ op: msg.op, origin: msg.origin, id: msg.id, token: token || "" }).then(sendResponse);
     });
     return true; // ответ асинхронный
   }

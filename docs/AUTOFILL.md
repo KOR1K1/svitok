@@ -32,6 +32,11 @@ Matching is by registrable domain, so a saved `github.com` also matches
 `gist.github.com`. For this to work the entry has to be saved as a domain
 (`github.com`), not a free-form name.
 
+An entry also matches on its extra domains ("other domains" in the edit form) -
+one service living on several domains fills the same password on all of them.
+Several accounts on one domain are separate entries told apart by login; the
+suggestion list shows each as "site (login)".
+
 The fill dialog is screen-capture protected, and the derivation runs the full
 memory-hard KDF, so expect a second or two after you enter the phrase.
 
