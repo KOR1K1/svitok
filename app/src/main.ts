@@ -1,7 +1,7 @@
 import { api, clipboardRead, clipboardWrite, clipCopy, clipClear, type SiteView, type EntryView } from "./api";
 import { h, clear, icons, haptic, toast, groupSecret, svgEl, logoScroll, confetti } from "./ui";
 import { t, getLang, setLang } from "./i18n";
-import { IS_MOBILE, scanQr, parseOtpauth } from "./scan";
+import { IS_MOBILE, scanQr, parseOtpauth, isScanning } from "./scan";
 import "./styles.css";
 
 const app = document.getElementById("app")!;
@@ -730,9 +730,10 @@ function resetIdle() {
 
 // Блокировка при сворачивании, если включена в настройках. Во время
 // создания и разблокировки unlocked=false, так что системный запрос
-// биометрии сам блокировку не вызывает.
+// биометрии сам блокировку не вызывает. Свой сканер QR - отдельная
+// активность поверх: пока он открыт, это не «свернули приложение».
 document.addEventListener("visibilitychange", () => {
-  if (document.visibilityState === "hidden" && lockOnBackground()) lockNow();
+  if (document.visibilityState === "hidden" && lockOnBackground() && !isScanning()) lockNow();
 });
 
 // Это приложение, а не веб-страница, поэтому глушим масштабирование жестами и Ctrl+колесом.

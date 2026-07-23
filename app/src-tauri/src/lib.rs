@@ -83,10 +83,6 @@ pub fn run() {
     let mut builder = tauri::Builder::default()
         .plugin(init_seed_plugin())
         .plugin(tauri_plugin_clipboard_manager::init());
-    #[cfg(any(target_os = "android", target_os = "ios"))]
-    {
-        builder = builder.plugin(tauri_plugin_barcode_scanner::init());
-    }
     // файловый диалог для импорта; зовётся только из Rust-команды, поэтому
     // JS-разрешений на него нет и содержимое файла в webview не попадает
     #[cfg(not(any(target_os = "android", target_os = "ios")))]
@@ -144,7 +140,8 @@ pub fn run() {
             commands::autofill_token,
             commands::paper_export,
             commands::import_pick,
-            commands::import_apply
+            commands::import_apply,
+            commands::scan_qr
         ])
         .run(tauri::generate_context!())
         .expect("ошибка запуска Tauri");

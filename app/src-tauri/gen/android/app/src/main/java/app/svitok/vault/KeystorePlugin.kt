@@ -47,6 +47,11 @@ internal class ClipArgs {
     lateinit var text: String
 }
 
+@InvokeArg
+internal class ScanArgs {
+    var hint: String = ""
+}
+
 private const val KEY_ALIAS = "svitok_seed_key_v2"
 private const val FILE_NAME = "seed.enc"
 private const val GCM_TAG_BITS = 128
@@ -249,6 +254,18 @@ class KeystorePlugin(private val activity: Activity) : Plugin(activity) {
         } catch (e: Exception) {
             invoke.reject("clipboard: ${e.message}")
         }
+    }
+
+    // Свой сканер QR (ScannerActivity, CameraX+ZXing). Ответ отдаёт активность
+    // через ScannerActivity.deliver - resolve с текстом кода или reject.
+    @Command
+    fun scanQr(invoke: Invoke) {
+        val args = invoke.parseArgs(ScanArgs::class.java)
+        ScannerActivity.pending?.reject("scan-restarted")
+        ScannerActivity.pending = invoke
+        val intent = android.content.Intent(activity, ScannerActivity::class.java)
+        intent.putExtra(ScannerActivity.EXTRA_HINT, args.hint)
+        activity.startActivity(intent)
     }
 
     @Command

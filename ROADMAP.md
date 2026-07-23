@@ -29,13 +29,9 @@ Smaller hardening that's already noted in the code and the audit:
 
 ## F-Droid
 
-I want it there. It's also the hardest item, for two reasons.
+I want it there, and the hard blocker is gone: the QR scanner no longer uses Google's ML Kit - it's our own CameraX + ZXing-core implementation, so the APK carries no proprietary bits and no Play Services.
 
-First, the QR scanner uses Google's ML Kit, which is proprietary and tied to Play Services. F-Droid won't accept that. Two ways out: ship an F-Droid flavor with the camera scanner removed (sync still works through backup / paste), or swap ML Kit for a free decoder like ZXing so the camera keeps working everywhere.
-
-Second, F-Droid builds from source on their own servers, and a Tauri Android build - Rust cross-compile, NDK, npm, gradle - is not a trivial recipe to get green there.
-
-Once those are handled: fastlane metadata in the repo (descriptions, per-version changelogs, screenshots), a merge request to `fdroiddata` with the build recipe, and `UpdateCheckMode: Tags` so a new git tag gets built and published on its own. After that, releasing is just tagging.
+What's left is the plumbing. F-Droid builds from source on their own servers, and a Tauri Android build - Rust cross-compile, NDK, npm, gradle - is not a trivial recipe to get green there. Then: fastlane metadata in the repo (descriptions, per-version changelogs, screenshots), a merge request to `fdroiddata` with the build recipe, and `UpdateCheckMode: Tags` so a new git tag gets built and published on its own. After that, releasing is just tagging.
 
 If reach matters before all that lands, IzzyOnDroid takes prebuilt APKs with much lighter requirements.
 

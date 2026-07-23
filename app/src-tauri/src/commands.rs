@@ -1178,6 +1178,33 @@ pub async fn import_apply(app: tauri::AppHandle, state: State<'_, AppState>, pat
     }
 }
 
+/// Сканировать QR своим сканером (ScannerActivity: CameraX + ZXing, без ML Kit).
+/// Блокируемся до результата, как и биометрия: run_mobile_plugin ждёт resolve.
+/// Отмена и отсутствие камеры приходят как reject «cancelled» / «no-camera».
+#[tauri::command]
+pub async fn scan_qr(app: tauri::AppHandle, state: State<'_, AppState>, hint: String) -> Result<String, String> {
+    require_key(&state)?;
+    #[cfg(target_os = "android")]
+    {
+        #[derive(Serialize)]
+        struct A {
+            hint: String,
+        }
+        let p = app.state::<crate::SeedPlugin>();
+        let v: serde_json::Value =
+            p.0.run_mobile_plugin("scanQr", A { hint }).map_err(|e| e.to_string())?;
+        v.get("value")
+            .and_then(|x| x.as_str())
+            .map(str::to_string)
+            .ok_or_else(|| "пустой результат сканера".into())
+    }
+    #[cfg(not(target_os = "android"))]
+    {
+        let _ = (app, hint);
+        Err("сканер камеры - только на телефоне".into())
+    }
+}
+
 /// Токен связки для браузерного расширения (десктоп). Показывается в настройках,
 /// пользователь один раз копирует его в расширение - это и есть подтверждение.
 #[tauri::command]

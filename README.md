@@ -234,7 +234,8 @@ cli/           terminal version (svitok new / add / pw / totp / vault ...)
 app/           Tauri v2 app
   src/         frontend: vanilla TS + Vite, no framework (main.ts, ui.ts, api.ts, i18n.ts, scan.ts)
   src-tauri/   Rust backend: IPC commands, seed storage, local socket for the extension, platform glue
-    gen/android/  Kotlin: Keystore + BiometricPrompt, FLAG_SECURE, autofill service + JNI bridge
+    gen/android/  Kotlin: Keystore + BiometricPrompt, FLAG_SECURE, autofill service + JNI bridge,
+                  own QR scanner (CameraX + ZXing-core, no ML Kit / Play Services)
 host/          native messaging host: relays the browser extension to the app over a local socket
 extension/     MV3 browser extension for desktop autofill
 docs/          logo, screenshots, autofill guide; the paper spec is SPEC.md at the root

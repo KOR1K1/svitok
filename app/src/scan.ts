@@ -1,17 +1,30 @@
-// Скан QR камерой, только на мобильных. Плагин barcode-scanner грузим
-// динамически - на десктопе он в бандл не попадёт.
-// С камеры ничего наружу не уходит: приложение работает без сети.
+// Скан QR камерой, только на мобильных. Сканер свой (ScannerActivity:
+// CameraX + ZXing), без Google ML Kit - и с камеры ничего наружу не уходит:
+// приложение работает без сети.
+
+import { invoke } from "@tauri-apps/api/core";
+import { t } from "./i18n";
 
 export const IS_MOBILE = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
 
-/** Открываем камеру и отдаём первый QR. Нет доступа - кидаем "no-camera". */
+// сканер - отдельная активность, главное окно на это время уходит в фон;
+// блокировка «при сворачивании» не должна принимать его за сворачивание
+let scanning = false;
+export const isScanning = () => scanning;
+
+/** Открываем камеру и отдаём первый QR. Отмена - null, нет доступа - "no-camera". */
 export async function scanQr(): Promise<string | null> {
-  const bs = await import("@tauri-apps/plugin-barcode-scanner");
-  let state = await bs.checkPermissions();
-  if (state !== "granted") state = await bs.requestPermissions();
-  if (state !== "granted") throw new Error("no-camera");
-  const res = await bs.scan({ windowed: false, formats: [] });
-  return res.content ?? null;
+  scanning = true;
+  try {
+    return await invoke<string>("scan_qr", { hint: t("scan.hint") });
+  } catch (e) {
+    const msg = String(e);
+    if (msg.includes("cancel")) return null;
+    if (msg.includes("no-camera")) throw new Error("no-camera");
+    throw e;
+  } finally {
+    scanning = false;
+  }
 }
 
 export interface Otp { label: string; secret: string; digits8: boolean; period: number; }
