@@ -128,6 +128,9 @@ jobs:
       - name: Release notes from tag annotation
         run: |
           if [ "${{ github.ref_type }}" = "tag" ]; then
+            # checkout подменяет аннотированный тег на коммит - перекачиваем
+            # настоящий тег, иначе в notes уедет сообщение коммита
+            git fetch --force origin "refs/tags/${{ github.ref_name }}:refs/tags/${{ github.ref_name }}"
             git tag -l --format='%(contents)' "${{ github.ref_name }}" > notes.md
           fi
           if [ ! -s notes.md ]; then
