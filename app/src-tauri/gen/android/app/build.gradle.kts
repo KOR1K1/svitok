@@ -55,7 +55,12 @@ android {
             }
         }
         getByName("release") {
-            signingConfig = signingConfigs.getByName("release")
+            // без keystore.properties собираем БЕЗ подписи (-unsigned.apk):
+            // так релиз проверяют на воспроизводимость (docs/REPRODUCIBLE.md),
+            // а с назначенным, но пустым signingConfig gradle просто падает
+            if (rootProject.file("keystore.properties").exists()) {
+                signingConfig = signingConfigs.getByName("release")
+            }
             isMinifyEnabled = true
             proguardFiles(
                 *fileTree(".") { include("**/*.pro") }

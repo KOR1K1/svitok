@@ -77,6 +77,20 @@ apksigcopier compare Svitok-VERSION-android.apk --unsigned app-universal-release
 Silence means the APKs are identical except for the signature - i.e. the
 released APK was built from this source.
 
+`compare` shells out to `apksigner`; on Windows the `.bat` shim is sometimes
+not found even on PATH. Equivalent check without it: graft the release
+signature onto your build and compare hashes yourself -
+
+```powershell
+apksigcopier copy Svitok-VERSION-android.apk app-universal-release-unsigned.apk grafted.apk
+Get-FileHash Svitok-VERSION-android.apk, grafted.apk -Algorithm SHA256
+```
+
+Matching hashes prove the same thing, byte for byte.
+
+The released APK is built with exactly this recipe (same `RUSTFLAGS`, same
+pinned toolchains) plus the signing key.
+
 ## Verifying a release
 
 1. Check out the release tag: `git checkout vX.Y.Z`.
