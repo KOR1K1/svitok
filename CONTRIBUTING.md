@@ -4,7 +4,7 @@ Thanks for taking a look. Bug reports, audits of the crypto, translations, and s
 
 ## The one hard rule: don't break the paper
 
-Svitok's whole promise is that a seed and phrase written down today still produce the same passwords years from now, on any machine. That means **the derivation scheme is frozen.**
+Svitok's whole promise is that a seed written down today (plus the phrase you keep in your head) still produces the same passwords years from now, on any machine. That means **the derivation scheme is frozen.**
 
 `core/tests/golden.rs` pins the exact output of the master key, per-site password, fingerprint, and the paper round-trip. If a change makes those tests fail, it has broken bit-compatibility, and every seed already written on paper becomes worthless. So:
 
@@ -29,6 +29,15 @@ cargo run -p svitok -- --help   # CLI, easiest way to poke the algorithm
 cd app && npm install && npm run tauri dev   # the GUI
 ```
 
+Heads up: `--workspace` includes the Tauri crate, which on Linux needs the system
+packages from the [Tauri prerequisites](https://v2.tauri.app/start/prerequisites/)
+(webkit2gtk, libsecret, ...). Without them, run what CI runs - it's the whole
+crypto/golden suite:
+
+```bash
+cargo test -p svitok-core -p svitok-common -p svitok-cli
+```
+
 ## Where help is most useful
 
 - **Auditing `core/`** - the hand-rolled crypto. This is the important stuff. If you're a cryptographer, please be mean to it.
@@ -42,13 +51,26 @@ cd app && npm install && npm run tauri dev   # the GUI
 - Match the code around you - naming, spacing, how errors are handled. Nothing exotic.
 - Comments explain *why*, not *what*. If the code already says it, don't add a comment. Write them like a person did: plain language, a regular hyphen instead of an em-dash, no emoji, no "note that" / "this function does X" filler.
 - No new dependencies in `core/` - it's zero-dependency on purpose. Elsewhere, add a dependency only if it really earns its place.
-- Keep secrets out of the JS/IPC layer. The master key and seed live in Rust; only derived results and metadata cross the bridge. Wipe key material when you're done with it (`svitok_core::wipe`).
+- Keep secrets out of the JS/IPC layer. The master key lives in Rust and never crosses the bridge; the seed crosses only as paper lines on an explicit user action (`create_vault`, `show_seed`). Everything else is derived results and metadata. Wipe key material when you're done with it (`svitok_core::wipe`).
 
 ## Commits and PRs
 
 - Small, focused commits with a clear message. Present tense is fine ("add X", "fix Y").
 - One logical change per PR. If it touches the crypto core, say so up front and show that the golden vectors still pass.
 - If you used an AI tool for a substantial chunk, just mention it in the PR - no big deal, it's just useful to know.
+
+## Cutting a release (maintainer notes)
+
+- The version lives in `app/src-tauri/Cargo.toml`, `app/src-tauri/tauri.conf.json`,
+  and the Android `versionCode`/`versionName` in `gen/android/app/build.gradle.kts`.
+  The library crates and `package.json` keep their own numbers on purpose - don't
+  "sync" them.
+- Pushing an **annotated** tag `vX.Y.Z` triggers the release workflow; the tag
+  annotation becomes the GitHub release body, so write the notes there. A lightweight
+  tag means an empty release page.
+- CI builds the desktop bundles and `SHA256SUMS.txt`. The Android APK is built and
+  signed locally by the maintainer, attached to the release, and its checksum
+  appended - the release isn't done until that happens.
 
 ## Security issues
 

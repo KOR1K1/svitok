@@ -35,11 +35,14 @@ builds on the apps.
   - `totp.rs` - TOTP codes. `vault.rs` - the `Entry` model (password vs TOTP entry).
   - `wipe.rs` - zero out key material.
 - **`common/`** - std layer over `core` for the CLI and GUI. No crypto beyond the core.
-  - `store.rs` - the on-disk files: `sites.txt` (metadata: id, alias domains, label),
-    `vault.b32` (ciphertext), `totp.idx` (TOTP index). No secrets on disk.
+  - `store.rs` - the on-disk files: `sites.txt` (the site list: derivation inputs plus
+    matching metadata, with a KDF-params header), `vault.b32` (ciphertext), `totp.idx`
+    (TOTP index). No secrets on disk.
   - `osrng.rs` - system RNG. `lockmem.rs` - lock memory pages. `qr.rs` - QR round-trip.
 - **`cli/`** - the `svitok` command-line tool (`main.rs`, `term.rs`). Easiest way to
-  poke the algorithm.
+  poke the algorithm. Writes `sites.txt`/`vault.b32` to the current directory by
+  default (`--dir` to point elsewhere); the GUI keeps its own separate store in the OS
+  app-data dir.
 - **`host/`** - native-messaging host for the browser extension. A thin, untrusted
   relay over a local socket; the core and secrets are not pulled in here.
 - **`app/src-tauri/`** - the Tauri desktop + Android app. **The master key is held here,

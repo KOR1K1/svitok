@@ -46,3 +46,8 @@ docs/android-tauri-research.md
 .DS_Store
 Thumbs.db
 psl.dat
+
+# стор CLI, если запустить его из корня репозитория - не коммитить
+/sites.txt
+/vault.b32
+/totp.idx
