@@ -342,7 +342,7 @@ fn cmd_totp(store: &Store, mk: &[u8; 32], args: &[String]) -> Result<(), String>
         .iter()
         .find(|e| matches!(e, Entry::Totp { .. }) && e.label().contains(label.as_str()))
         .ok_or(format!("TOTP «{label}» не найден (svitok vault ls)"))?;
-    if let Entry::Totp { label, secret, digits8, period } = e {
+    if let Entry::Totp { label, secret, digits8, period, .. } = e {
         let digits = if *digits8 { 8 } else { 6 };
         let now = unix_now();
         let code = totp::totp(secret, now, *period, digits);
@@ -379,7 +379,7 @@ fn cmd_vault(store: &Store, mk: &[u8; 32], args: &[String]) -> Result<(), String
                     println!("{label}: {}", String::from_utf8_lossy(secret));
                     2
                 }
-                Entry::Totp { label, secret, digits8, period } => {
+                Entry::Totp { label, secret, digits8, period, .. } => {
                     println!("{label}: totp, {} цифр, период {period} c", if *digits8 { 8 } else { 6 });
                     println!("секрет (RFC4648): {}", rfc4648_encode(secret));
                     3
@@ -437,7 +437,7 @@ fn cmd_vault(store: &Store, mk: &[u8; 32], args: &[String]) -> Result<(), String
             if !ok.eq_ignore_ascii_case("y") {
                 return Err("отменено".into());
             }
-            entries.push(Entry::Totp { label, secret: raw, digits8, period });
+            entries.push(Entry::Totp { label, secret: raw, digits8, period, login: String::new(), domains: Vec::new() });
             save_entries(store, mk, &entries)
         }
         "add-codes" => {

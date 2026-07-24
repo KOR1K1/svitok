@@ -63,7 +63,7 @@ fn full_cycle_paper() {
     // Гоняем цикл целиком: сейф -> бумага -> переписали с листка -> обратно в сейф.
     let mk = mk();
     let entries = vec![
-        Entry::Totp { label: "gh".into(), secret: b"12345678901234567890".to_vec(), digits8: false, period: 30 },
+        Entry::Totp { label: "gh".into(), secret: b"12345678901234567890".to_vec(), digits8: false, period: 30, login: String::new(), domains: Vec::new() },
         Entry::Codes { label: "goog".into(), codes: vec!["12345678".into(), "00001111".into()] },
         Entry::Note { label: "n".into(), text: "заметка".into() },
     ];

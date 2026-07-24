@@ -6,7 +6,11 @@
 //!   запись = тег(u8) ‖ len(label) ‖ label ‖ полезная нагрузка
 //!     1 пароль:   len ‖ bytes(utf8)
 //!     2 TOTP:     flags(u8) ‖ len ‖ секрет (сырые байты, не Base32!)
-//!                 flags: биты 0-1 алгоритм (0=SHA1), бит 2: 8 цифр, биты 3-4 период (0=30с,1=60с,2=15с)
+//!                 [если бит 5: len ‖ login ‖ count ‖ (len ‖ domain)*]
+//!                 flags: биты 0-1 алгоритм (0=SHA1), бит 2: 8 цифр, биты 3-4 период (0=30с,1=60с,2=15с),
+//!                 бит 5: есть привязка к аккаунту (login + домены для автозаполнения кода).
+//!                 Старые записи бит 5 не ставят и читаются как прежде; запись без привязки
+//!                 сериализуется байт-в-байт как в v1, так что бумажные векторы целы.
 //!     3 коды:     enc(u8: 0=utf8, 1=BCD-цифры) ‖ len ‖ данные
 //!                 (коды склеены '\n'; BCD: цифра в ниббл, 0xA=разделитель, 0xF=паддинг)
 //!     4 заметка:  len ‖ bytes(utf8)
@@ -25,7 +29,19 @@ use alloc::vec::Vec;
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Entry {
     Password { label: String, secret: Vec<u8> },
-    Totp { label: String, secret: Vec<u8>, digits8: bool, period: u32 },
+    Totp {
+        label: String,
+        secret: Vec<u8>,
+        digits8: bool,
+        period: u32,
+        /// Аккаунт, к которому привязан код (для автозаполнения). Пусто - не привязан.
+        /// Метаданные матчинга, в генерацию кода не входят; логин не секрет (он и в
+        /// списке сайтов лежит открытым).
+        login: String,
+        /// Домены (name + алиасы аккаунта), на которых код предлагается автозаполнением.
+        /// Снимок, а не ссылка: переживает удаление парольной записи. Пусто - не привязан.
+        domains: Vec<String>,
+    },
     Codes { label: String, codes: Vec<String> },
     Note { label: String, text: String },
 }
@@ -186,7 +202,7 @@ pub fn serialize(entries: &[Entry]) -> Vec<u8> {
                 put_bytes(&mut out, label.as_bytes());
                 put_bytes(&mut out, secret);
             }
-            Entry::Totp { label, secret, digits8, period } => {
+            Entry::Totp { label, secret, digits8, period, login, domains } => {
                 out.push(2);
                 put_bytes(&mut out, label.as_bytes());
                 let pbits: u8 = match period {
@@ -194,9 +210,18 @@ pub fn serialize(entries: &[Entry]) -> Vec<u8> {
                     15 => 2,
                     _ => 0,
                 };
-                let flags: u8 = ((*digits8 as u8) << 2) | (pbits << 3);
+                let bound = !login.is_empty() || !domains.is_empty();
+                let flags: u8 = ((*digits8 as u8) << 2) | (pbits << 3) | ((bound as u8) << 5);
                 out.push(flags);
                 put_bytes(&mut out, secret);
+                // без привязки байты те же, что в v1 - бумажные векторы не трогаем
+                if bound {
+                    put_bytes(&mut out, login.as_bytes());
+                    put_varint(&mut out, domains.len() as u64);
+                    for d in domains {
+                        put_bytes(&mut out, d.as_bytes());
+                    }
+                }
             }
             Entry::Codes { label, codes } => {
                 out.push(3);
@@ -249,11 +274,28 @@ pub fn deserialize(data: &[u8]) -> Option<Vec<Entry>> {
                     2 => 15,
                     _ => 30,
                 };
+                let secret = get_bytes(data, &mut pos)?.to_vec();
+                let (login, domains) = if flags & 0b10_0000 != 0 {
+                    let login = String::from_utf8(get_bytes(data, &mut pos)?.to_vec()).ok()?;
+                    let n = usize::try_from(get_varint(data, &mut pos)?).ok()?;
+                    if n > 64 {
+                        return None; // разумный потолок доменов на запись
+                    }
+                    let mut domains = Vec::with_capacity(n);
+                    for _ in 0..n {
+                        domains.push(String::from_utf8(get_bytes(data, &mut pos)?.to_vec()).ok()?);
+                    }
+                    (login, domains)
+                } else {
+                    (String::new(), Vec::new())
+                };
                 Entry::Totp {
                     label,
-                    secret: get_bytes(data, &mut pos)?.to_vec(),
+                    secret,
                     digits8: flags & 0b100 != 0,
                     period,
+                    login,
+                    domains,
                 }
             }
             3 => {
@@ -343,6 +385,8 @@ mod tests {
                 secret: b"12345678901234567890".to_vec(),
                 digits8: false,
                 period: 30,
+                login: String::new(),
+                domains: Vec::new(),
             },
             Entry::Codes {
                 label: "google-rec".into(),
@@ -360,6 +404,40 @@ mod tests {
     fn serialize_roundtrip() {
         let e = sample();
         assert_eq!(deserialize(&serialize(&e)).unwrap(), e);
+    }
+
+    #[test]
+    fn totp_binding_roundtrip() {
+        let e = vec![Entry::Totp {
+            label: "Discord".into(),
+            secret: b"12345678901234567890".to_vec(),
+            digits8: false,
+            period: 30,
+            login: "user@x".into(),
+            domains: vec!["discord.com".into(), "discordapp.com".into()],
+        }];
+        assert_eq!(deserialize(&serialize(&e)).unwrap(), e);
+    }
+
+    #[test]
+    fn unbound_totp_is_byte_identical_to_v1() {
+        // запись без привязки должна сериализоваться точно как в v1 - иначе
+        // золотые бумажные векторы (core/tests/golden.rs) поехали бы
+        let unbound = vec![Entry::Totp {
+            label: "gh".into(),
+            secret: b"12345678901234567890".to_vec(),
+            digits8: false,
+            period: 30,
+            login: String::new(),
+            domains: Vec::new(),
+        }];
+        // v1-байты: ver, count=1, tag=2, len(2)+"gh", flags=0, len(20)+secret
+        let mut expect = vec![0x01, 0x01, 0x02, 0x02];
+        expect.extend_from_slice(b"gh");
+        expect.push(0x00);
+        expect.push(20);
+        expect.extend_from_slice(b"12345678901234567890");
+        assert_eq!(serialize(&unbound), expect);
     }
 
     #[test]
@@ -410,6 +488,8 @@ mod tests {
                 secret: vec![0xAB; 20],
                 digits8: false,
                 period: 30,
+                login: String::new(),
+                domains: Vec::new(),
             });
         }
         for i in 0..3 {

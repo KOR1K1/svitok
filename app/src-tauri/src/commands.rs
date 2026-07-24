@@ -695,7 +695,7 @@ pub fn totp_code(app: tauri::AppHandle, state: State<AppState>, label: String) -
     let dir = dir_of(&app)?;
     let entries = load_entries(&dir, &mk)?;
     for e in &entries {
-        if let Entry::Totp { label: l, secret, digits8, period } = e {
+        if let Entry::Totp { label: l, secret, digits8, period, .. } = e {
             if *l == label {
                 let digits = if *digits8 { 8 } else { 6 };
                 let now = unix_now();
@@ -721,8 +721,12 @@ pub fn vault_add_totp(
     secret_b32: String,
     digits8: bool,
     period: u32,
+    // привязка к аккаунту для автозаполнения кода; пусто - код только в списке
+    login: String,
+    domains: Vec<String>,
 ) -> Result<TotpView, String> {
     let mk = require_key(&state)?;
+    check_aliases(&domains)?;
     let dir = dir_of(&app)?;
     let raw = svitok_core::totp::decode_rfc4648(&secret_b32).ok_or("не Base32-секрет")?;
     if raw.is_empty() {
@@ -739,7 +743,7 @@ pub fn vault_add_totp(
     let digits = if digits8 { 8 } else { 6 };
     let now = unix_now();
     let code = svitok_core::totp::totp(&raw, now, per, digits);
-    entries.push(Entry::Totp { label: label.clone(), secret: raw, digits8, period: per });
+    entries.push(Entry::Totp { label: label.clone(), secret: raw, digits8, period: per, login, domains });
     save_entries(&dir, &mk, &entries)?;
     Ok(TotpView {
         label,
