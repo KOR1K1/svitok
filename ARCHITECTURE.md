@@ -7,15 +7,19 @@ contributing see [CONTRIBUTING.md](CONTRIBUTING.md) and [AGENTS.md](AGENTS.md).
 
 ## The idea in one paragraph
 
-A password is a pure function of `site`, `login`, `counter`, and `policy` - nothing
-else. Write a 128-bit seed and a phrase on paper, and the same inputs reproduce the
-same passwords forever, on any machine. Secrets (the seed, the master key) live in
-Rust and never cross the JS/IPC bridge; only derived results and metadata do.
+The master key is `KDF(seed, phrase)`; a password is then a pure function of the
+master key, `site`, `login`, `counter`, and `policy` - nothing else. The 128-bit seed
+is written on paper, the phrase stays in your head, and the same inputs reproduce the
+same passwords forever, on any machine. The master key lives in Rust and never crosses
+the JS/IPC bridge; the seed crosses only as paper lines when the user explicitly asks
+to see it (`create_vault`, `show_seed`). Everything else that crosses is derived
+results and metadata.
 
 ## Workspace (Rust crates)
 
 Members are in the root `Cargo.toml`. Dependency direction is one-way: everything
-builds on `core`, nothing builds on the apps.
+except `host` builds on `core` (host deliberately depends on neither), and nothing
+builds on the apps.
 
 - **`core/`** - the crypto core. Zero external dependencies, `no_std + alloc`, builds
   for any target with bit-identical output. **This is the frozen part** - changing
@@ -23,15 +27,16 @@ builds on `core`, nothing builds on the apps.
   - `blake2s.rs`, `chacha20.rs` - the two primitives (hash/MAC/KDF/PRF, and cipher/stream).
   - `sha1.rs` - kept only for TOTP's HMAC-SHA1.
   - `kdf.rs` - key derivation with the on-paper `M`/`T` parameters.
-  - `derive.rs` - the function `F`: (seed, site, login, counter, policy) -> password.
+  - `derive.rs` - `site_password(mk, site, login, counter, policy) -> password`,
+    where `mk` is the master key from `kdf.rs`.
   - `base32.rs` - Base32 for the seed and the `vault.b32` ciphertext.
   - `domain.rs` + `psl_data.rs` - domain matching against the Public Suffix List
     (regenerate the data with `scripts/gen_psl.js`).
   - `totp.rs` - TOTP codes. `vault.rs` - the `Entry` model (password vs TOTP entry).
   - `wipe.rs` - zero out key material.
 - **`common/`** - std layer over `core` for the CLI and GUI. No crypto beyond the core.
-  - `store.rs` - the on-disk files: `sites.txt` (metadata: id, alias domains, label,
-    totp index) and `vault.b32` (ciphertext). No secrets on disk.
+  - `store.rs` - the on-disk files: `sites.txt` (metadata: id, alias domains, label),
+    `vault.b32` (ciphertext), `totp.idx` (TOTP index). No secrets on disk.
   - `osrng.rs` - system RNG. `lockmem.rs` - lock memory pages. `qr.rs` - QR round-trip.
 - **`cli/`** - the `svitok` command-line tool (`main.rs`, `term.rs`). Easiest way to
   poke the algorithm.
@@ -41,7 +46,7 @@ builds on `core`, nothing builds on the apps.
   in Rust state**, and never crosses the bridge.
   - `commands.rs` - Tauri commands the frontend calls. `lib.rs`/`main.rs` - entry point.
   - `seed.rs`, `seedstore.rs` - the seed in the OS secret store (desktop: Credential
-    Manager / Keychain / keyutils).
+    Manager / Keychain / Secret Service).
   - `import.rs` - file import (desktop only; the phone receives the list by QR).
   - `ipc_server.rs` - local socket that pairs with the browser extension (desktop only).
   - `jni_autofill.rs` - JNI bridge to the Android AutofillService (Android only).
@@ -60,9 +65,11 @@ builds on `core`, nothing builds on the apps.
 
 ## Trust boundary
 
-Seed and master key stay in Rust (`app/src-tauri`, held in state; OS keystore at rest).
-Only derived passwords and metadata cross into JS, the extension, or the autofill
-service. The native-messaging `host/` is treated as untrusted.
+The master key stays in Rust (`app/src-tauri`, held in state) and never crosses the
+bridge. The seed rests in the OS keystore and crosses into JS only as paper lines on
+an explicit user action (`create_vault` returning the sheet, `show_seed`). Everything
+else that reaches JS, the extension, or the autofill service is derived passwords and
+metadata. The native-messaging `host/` is treated as untrusted.
 
 ## Where a change goes
 
@@ -81,7 +88,5 @@ it if a build dirties it).
 
 ---
 
-Keeping this file honest is part of the change, not a chore for later: when you add,
-remove, or rename a module, change the trust boundary, or add a feature area, update
-the matching line here (and the nested `AGENTS.md`, if the subdir has one) in the same
-commit. A stale map is worse than none.
+When a structural change makes a line here untrue, fix it in the same commit - the
+rule and its details are in [AGENTS.md](AGENTS.md).
