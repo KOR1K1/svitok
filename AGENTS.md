@@ -1,8 +1,10 @@
 # AGENTS.md
 
 Orientation for coding agents (and a quick reference for humans). Read
-[CONTRIBUTING.md](CONTRIBUTING.md) and [SPEC.md](SPEC.md) too - this file does not
-repeat them, it points at them and adds the things a machine tends to get wrong.
+[ARCHITECTURE.md](ARCHITECTURE.md) for the code map (what lives where),
+[SPEC.md](SPEC.md) for the derivation math, and [CONTRIBUTING.md](CONTRIBUTING.md) for
+the rules - this file does not repeat them, it points at them and adds the things a
+machine tends to get wrong.
 
 ## The one rule that overrides everything: don't break the paper
 
@@ -56,6 +58,23 @@ cargo deny check        # advisories + licenses + duplicate versions (needs carg
 - **Don't hand-edit** other `gen/` output, `Cargo.lock` (except real dependency
   changes), or build logs.
 - **Translations** are two flat dictionaries (`ru`, `en`) in `app/src/i18n.ts`.
+
+## Keep the docs current (this is part of the change, not a chore for later)
+
+The point of [ARCHITECTURE.md](ARCHITECTURE.md) is that someone - human or agent - can
+onboard from it without a cold-start tour of the repo. That only works if it stays
+true. So, in the *same* commit as a structural change:
+
+- Added, removed, or renamed a module/crate/major file -> update the matching line in
+  ARCHITECTURE.md.
+- Moved the trust boundary, or added a feature area (a new command surface, a new
+  client) -> update ARCHITECTURE.md and, if the subdir has one, its nested `AGENTS.md`.
+- Changed a public interface others rely on -> update the doc comment (`///`) and any
+  reference to it.
+
+Keep it a code map, not a novel - one line per part, pointing at the code. Don't
+document every symbol (that's what the code and the LSP are for); a stale map is worse
+than none. A pure bug fix that doesn't move any of the above needs no doc change.
 
 ## Commits and PRs
 
