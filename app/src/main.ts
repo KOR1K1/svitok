@@ -58,9 +58,44 @@ async function syncWindowTitle() {
   } catch { /* окна нет - не десктоп */ }
 }
 
+// Тема: системная / тёмная «Чернила» / светлая «Пергамент». Токены переключает
+// data-theme на <html> (до первой отрисовки его ставит скрипт в index.html),
+// системную обвязку окна перекрашивает apply_theme на стороне Rust.
+type ThemePref = "system" | "dark" | "light";
+
+function themePref(): ThemePref {
+  try {
+    const v = localStorage.getItem("svitok.theme");
+    if (v === "dark" || v === "light") return v;
+  } catch { /* дефолт ниже */ }
+  return "system";
+}
+
+function themeIsLight(pref: ThemePref): boolean {
+  return pref === "light" || (pref === "system" && matchMedia("(prefers-color-scheme: light)").matches);
+}
+
+function applyTheme() {
+  const light = themeIsLight(themePref());
+  if (light) document.documentElement.dataset.theme = "light";
+  else delete document.documentElement.dataset.theme;
+  api.applyThemeChrome(light).catch(() => {});
+}
+
+function setThemePref(p: ThemePref) {
+  try { localStorage.setItem("svitok.theme", p); } catch { /* тема просто не переживёт перезапуск */ }
+  applyTheme();
+}
+
+// смена системной темы на лету уважается, пока выбрано «Системная»
+matchMedia("(prefers-color-scheme: light)").addEventListener("change", () => {
+  if (themePref() === "system") applyTheme();
+});
+
 async function boot() {
   const minShown = showSplash();
   syncWindowTitle();
+  applyTheme();
   try {
     const st = await api.status();
     await minShown;
@@ -221,6 +256,14 @@ function settingsBody(refresh: () => void): HTMLElement[] {
       segmented([
         { label: "Русский", active: getLang() === "ru", onClick: () => switchLang("ru", refresh) },
         { label: "English", active: getLang() === "en", onClick: () => switchLang("en", refresh) },
+      ]),
+    ]),
+    h("div.stack.gap-3", {}, [
+      h("div.t-section", {}, [t("settings.theme")]),
+      segmented([
+        { label: t("theme.system"), active: themePref() === "system", onClick: () => { setThemePref("system"); refresh(); } },
+        { label: t("theme.dark"), active: themePref() === "dark", onClick: () => { setThemePref("dark"); refresh(); } },
+        { label: t("theme.light"), active: themePref() === "light", onClick: () => { setThemePref("light"); refresh(); } },
       ]),
     ]),
     h("div.stack.gap-3", {}, [

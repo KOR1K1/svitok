@@ -7,6 +7,14 @@
       content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover, interactive-widget=resizes-content"
     />
     <title>Свиток</title>
+    <script>
+      // тема до первой отрисовки, иначе при светлой теме мигнёт тёмный фон
+      try {
+        var t = localStorage.getItem("svitok.theme") || "system";
+        var light = t === "light" || (t === "system" && matchMedia("(prefers-color-scheme: light)").matches);
+        if (light) document.documentElement.dataset.theme = "light";
+      } catch (e) {}
+    </script>
     <link rel="stylesheet" href="/src/styles.css" />
   </head>
   <body>

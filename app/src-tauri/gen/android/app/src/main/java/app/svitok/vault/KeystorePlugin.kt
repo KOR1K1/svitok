@@ -52,6 +52,11 @@ internal class ScanArgs {
     var hint: String = ""
 }
 
+@InvokeArg
+internal class BarsArgs {
+    var light: Boolean = false
+}
+
 private const val KEY_ALIAS = "svitok_seed_key_v2"
 private const val FILE_NAME = "seed.enc"
 private const val GCM_TAG_BITS = 128
@@ -253,6 +258,18 @@ class KeystorePlugin(private val activity: Activity) : Plugin(activity) {
             invoke.resolve()
         } catch (e: Exception) {
             invoke.reject("clipboard: ${e.message}")
+        }
+    }
+
+    // Иконки статус- и нав-баров под тему: светлая тема = тёмные иконки.
+    @Command
+    fun setLightBars(invoke: Invoke) {
+        val args = invoke.parseArgs(BarsArgs::class.java)
+        activity.runOnUiThread {
+            val c = androidx.core.view.WindowCompat.getInsetsController(activity.window, activity.window.decorView)
+            c.isAppearanceLightStatusBars = args.light
+            c.isAppearanceLightNavigationBars = args.light
+            invoke.resolve()
         }
     }
 

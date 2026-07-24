@@ -66,4 +66,6 @@ export const api = {
   // импорт: диалог и чтение файла на стороне Rust, сюда приходят только метаданные
   importPick: () => invoke<ImportPreview | null>("import_pick"),
   importApply: (path: string) => invoke<number>("import_apply", { path }),
+  // перекраска системной обвязки окна (тайтлбар/иконки баров) под тему
+  applyThemeChrome: (light: boolean) => invoke<void>("apply_theme", { light }),
 };

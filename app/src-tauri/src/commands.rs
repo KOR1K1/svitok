@@ -1178,6 +1178,38 @@ pub async fn import_apply(app: tauri::AppHandle, state: State<'_, AppState>, pat
     }
 }
 
+/// Перекрасить системную обвязку окна под тему приложения: на Windows -
+/// тайтлбар через DWM, на Android - иконки статус- и нав-баров. Косметика,
+/// блокировки не требует: тема переключается и с экрана ввода фразы.
+#[tauri::command]
+pub fn apply_theme(app: tauri::AppHandle, light: bool) -> Result<(), String> {
+    #[cfg(windows)]
+    {
+        if let Some(win) = app.get_webview_window("main") {
+            if let Ok(hwnd) = win.hwnd() {
+                crate::win_titlebar::apply(hwnd.0 as isize, light);
+            }
+        }
+        Ok(())
+    }
+    #[cfg(target_os = "android")]
+    {
+        #[derive(Serialize)]
+        struct A {
+            light: bool,
+        }
+        let p = app.state::<crate::SeedPlugin>();
+        let _: serde_json::Value =
+            p.0.run_mobile_plugin("setLightBars", A { light }).map_err(|e| e.to_string())?;
+        Ok(())
+    }
+    #[cfg(all(not(windows), not(target_os = "android")))]
+    {
+        let _ = (app, light);
+        Ok(())
+    }
+}
+
 /// Сканировать QR своим сканером (ScannerActivity: CameraX + ZXing, без ML Kit).
 /// Блокируемся до результата, как и биометрия: run_mobile_plugin ждёт resolve.
 /// Отмена и отсутствие камеры приходят как reject «cancelled» / «no-camera».

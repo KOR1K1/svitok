@@ -20,8 +20,7 @@
         "minHeight": 540,
         "resizable": true,
         "center": true,
-        "contentProtected": true,
-        "theme": "Dark"
+        "contentProtected": true
       }
     ],
     "security": {

@@ -18,10 +18,10 @@ mod winclip;
 use std::path::PathBuf;
 use std::sync::Mutex;
 
-/// Тёмный заголовок окна Windows 11 под палитру «Чернила» (#141210).
-/// Дёргаем DWM: иммерсивная тёмная тема плюс явный цвет фона и текста заголовка.
+/// Заголовок окна Windows 11 под тему: «Чернила» (#141210) или «Пергамент»
+/// (#F4EEE4). Дёргаем DWM: иммерсивный режим плюс явные цвета фона и текста.
 #[cfg(windows)]
-mod win_titlebar {
+pub(crate) mod win_titlebar {
     use core::ffi::c_void;
 
     const DWMWA_USE_IMMERSIVE_DARK_MODE: u32 = 20;
@@ -40,10 +40,16 @@ mod win_titlebar {
     }
 
     /// у COLORREF порядок байтов 0x00BBGGRR
-    pub fn apply(hwnd: isize) {
-        set(hwnd, DWMWA_USE_IMMERSIVE_DARK_MODE, 1);
-        set(hwnd, DWMWA_CAPTION_COLOR, 0x0010_1214); // фон #141210
-        set(hwnd, DWMWA_TEXT_COLOR, 0x00DE_E7ED); // текст #EDE7DE
+    pub fn apply(hwnd: isize, light: bool) {
+        if light {
+            set(hwnd, DWMWA_USE_IMMERSIVE_DARK_MODE, 0);
+            set(hwnd, DWMWA_CAPTION_COLOR, 0x00E4_EEF4); // фон #F4EEE4
+            set(hwnd, DWMWA_TEXT_COLOR, 0x001D_242A); // текст #2A241D
+        } else {
+            set(hwnd, DWMWA_USE_IMMERSIVE_DARK_MODE, 1);
+            set(hwnd, DWMWA_CAPTION_COLOR, 0x0010_1214); // фон #141210
+            set(hwnd, DWMWA_TEXT_COLOR, 0x00DE_E7ED); // текст #EDE7DE
+        }
     }
 }
 
@@ -96,7 +102,8 @@ pub fn run() {
                 use tauri::Manager;
                 if let Some(win) = _app.get_webview_window("main") {
                     if let Ok(hwnd) = win.hwnd() {
-                        win_titlebar::apply(hwnd.0 as isize);
+                        // тёмный по умолчанию; фронт перекрасит под тему в boot()
+                        win_titlebar::apply(hwnd.0 as isize, false);
                     }
                 }
             }
@@ -141,7 +148,8 @@ pub fn run() {
             commands::paper_export,
             commands::import_pick,
             commands::import_apply,
-            commands::scan_qr
+            commands::scan_qr,
+            commands::apply_theme
         ])
         .run(tauri::generate_context!())
         .expect("ошибка запуска Tauri");
