@@ -12,3 +12,6 @@ path = "src/main.rs"
 # Хост - тонкий недоверенный релей, ядро и секреты сюда не тянем.
 [dependencies]
 interprocess = "2"
+
+[lints]
+workspace = true

@@ -10,3 +10,6 @@ svitok-common = { path = "../common" }
 [[bin]]
 name = "svitok"
 path = "src/main.rs"
+
+[lints]
+workspace = true

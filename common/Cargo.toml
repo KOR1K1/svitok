@@ -14,3 +14,6 @@ name = "svitok_common"
 # Нужны только тестам (round-trip проверка QR), в релиз не попадают.
 rqrr = "0.10"
 image = { version = "0.25", default-features = false }
+
+[lints]
+workspace = true

@@ -37,3 +37,6 @@ tauri-plugin-dialog = "2"
 # по умолчанию берём стандартный протокол, кастомный тут ни к чему
 default = ["custom-protocol"]
 custom-protocol = ["tauri/custom-protocol"]
+
+[lints]
+workspace = true
