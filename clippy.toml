@@ -1,0 +1,4 @@
+# В тестах unwrap/expect - норма (падение теста и есть сигнал), в рабочем коде - нет.
+allow-unwrap-in-tests = true
+allow-expect-in-tests = true
+allow-panic-in-tests = true

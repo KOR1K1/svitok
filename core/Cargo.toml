@@ -8,3 +8,6 @@ edition = "2021"
 
 [lib]
 name = "svitok_core"
+
+[lints]
+workspace = true

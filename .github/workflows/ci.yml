@@ -14,6 +14,23 @@ env:
   CARGO_TERM_COLOR: always
 
 jobs:
+  # Формат и clippy. Предупреждения не роняют job (в коде пока есть unwrap и
+  # недокументированный unsafe - бэклог), но их видно в логе. Как разгребём -
+  # добавим -D warnings.
+  lint:
+    name: fmt & clippy
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      - uses: Swatinem/rust-cache@v2
+      - name: rustfmt
+        run: cargo fmt --all --check
+      - name: clippy (report-only)
+        run: cargo clippy --workspace --all-targets
+
   # Криптоядро и общий слой - чистые Rust-тесты (RFC-векторы, golden-векторы).
   core-tests:
     name: Rust core tests
