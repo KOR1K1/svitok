@@ -145,6 +145,8 @@ const ru: Dict = {
   "addtotp.errFill": "Заполните метку и секрет",
   "addtotp.added": "Добавлено. Текущий код: {code}",
   "addtotp.scan": "Сканировать QR",
+  "addtotp.bindLabel": "Автозаполнять код на сайте аккаунта",
+  "addtotp.bindNone": "— не привязывать —",
   "scan.noCamera": "Нет доступа к камере",
   "scan.notOtp": "Это не QR аутентификатора (otpauth)",
 
@@ -403,6 +405,8 @@ const en: Dict = {
   "addtotp.errFill": "Fill in the label and secret",
   "addtotp.added": "Added. Current code: {code}",
   "addtotp.scan": "Scan QR",
+  "addtotp.bindLabel": "Autofill the code on the account's site",
+  "addtotp.bindNone": "— don't attach —",
   "scan.noCamera": "No camera access",
   "scan.notOtp": "Not an authenticator (otpauth) QR",
 

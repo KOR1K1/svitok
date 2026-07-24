@@ -60,7 +60,38 @@ fn process(app: &tauri::AppHandle, req: &[u8]) -> Vec<u8> {
         "ping" => br#"{"ok":true}"#.to_vec(),
         "match" => do_match(app, &v),
         "fill" => fill(app, &v),
+        "code" => code(app, &v),
         _ => err("unknown-op"),
+    }
+}
+
+/// Матчит ли привязанный TOTP этот домен: любой из его доменов сводится к canon.
+fn totp_matches(domains: &[String], canon: &str) -> bool {
+    domains.iter().any(|d| svitok_core::domain::canonical(d).as_deref() == Some(canon))
+}
+
+/// Метки привязанных TOTP-записей, чьи домены совпали. Нужен разблокированный
+/// ваулт: привязки лежат в шифрованном сейфе. mk уже под рукой у вызывающего.
+fn matching_totp_labels(dir: &Path, mk: &[u8; 32], canon: &str) -> Vec<String> {
+    let store = match Store::load(dir) {
+        Ok(s) => s,
+        Err(_) => return Vec::new(),
+    };
+    let blob = match store.read_vault_blob() {
+        Ok(Some(b)) => b,
+        _ => return Vec::new(),
+    };
+    match svitok_core::vault::decrypt(mk, &blob) {
+        Ok(entries) => entries
+            .iter()
+            .filter_map(|e| match e {
+                svitok_core::vault::Entry::Totp { label, domains, .. } if totp_matches(domains, canon) => {
+                    Some(label.clone())
+                }
+                _ => None,
+            })
+            .collect(),
+        Err(_) => Vec::new(),
     }
 }
 
@@ -81,8 +112,77 @@ fn do_match(app: &tauri::AppHandle, v: &serde_json::Value) -> Vec<u8> {
         .filter(|s| s.matches_domain(&canon))
         .map(|s| serde_json::json!({ "id": s.id, "name": s.name, "login": s.login, "label": s.label }))
         .collect();
-    let locked = current_key(app).is_none();
-    serde_json::json!({ "ok": true, "locked": locked, "matches": matches }).to_string().into_bytes()
+    // привязанные TOTP видны только на разблокированном ваулте (они в сейфе);
+    // к шагу 2FA пользователь уже разблокирован после ввода пароля
+    let (locked, totp) = match current_key(app) {
+        Some(mut mk) => {
+            let labels = matching_totp_labels(&dir, &mk, &canon);
+            svitok_core::wipe::wipe(&mut mk);
+            (false, labels)
+        }
+        None => (true, Vec::new()),
+    };
+    serde_json::json!({ "ok": true, "locked": locked, "matches": matches, "totp": totp })
+        .to_string()
+        .into_bytes()
+}
+
+/// Текущий код привязанного TOTP по клику в поле 2FA. Как и fill: если
+/// заблокировано - поднимаем окно и ждём фразы. Код считаем в самый последний
+/// момент (после разблокировки), чтобы он не протух за время ввода.
+fn code(app: &tauri::AppHandle, v: &serde_json::Value) -> Vec<u8> {
+    let (dir, canon) = match precheck(app, v) {
+        Ok(x) => x,
+        Err(e) => return e,
+    };
+    let only_label = v.get("label").and_then(|x| x.as_str());
+    let mut mk = match key_or_wait(app) {
+        Some(k) => k,
+        None => return err("locked"),
+    };
+    let store = match Store::load(&dir) {
+        Ok(s) => s,
+        Err(_) => {
+            svitok_core::wipe::wipe(&mut mk);
+            return err("no-store");
+        }
+    };
+    let blob = match store.read_vault_blob() {
+        Ok(Some(b)) => b,
+        _ => {
+            svitok_core::wipe::wipe(&mut mk);
+            return err("no-vault");
+        }
+    };
+    let entries = match svitok_core::vault::decrypt(&mk, &blob) {
+        Ok(e) => e,
+        Err(_) => {
+            svitok_core::wipe::wipe(&mut mk);
+            return err("vault");
+        }
+    };
+    svitok_core::wipe::wipe(&mut mk);
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0);
+    for e in &entries {
+        if let svitok_core::vault::Entry::Totp { label, secret, digits8, period, domains, .. } = e {
+            if !totp_matches(domains, &canon) {
+                continue;
+            }
+            if let Some(l) = only_label {
+                if l != label {
+                    continue;
+                }
+            }
+            let digits = if *digits8 { 8 } else { 6 };
+            let n = svitok_core::totp::totp(secret, now, *period, digits);
+            let code = format!("{:0width$}", n, width = digits as usize);
+            return serde_json::json!({ "ok": true, "code": code }).to_string().into_bytes();
+        }
+    }
+    err("no-code")
 }
 
 /// Заполнение по клику: если заблокировано - поднимаем окно и ждём разблокировки,

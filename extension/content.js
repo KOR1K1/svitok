@@ -39,6 +39,37 @@
     el.dispatchEvent(new Event("change", { bubbles: true }));
   }
 
+  // Поле ввода кода 2FA: надёжный сигнал autocomplete="one-time-code", иначе
+  // эвристики по имени/типу и сегментированные "квадратики" (maxlength=1).
+  function isOtpField(el) {
+    if (!isVisible(el)) return false;
+    const ac = (el.autocomplete || "").toLowerCase();
+    if (ac.includes("one-time-code")) return true;
+    const type = (el.type || "").toLowerCase();
+    if (type === "password") return false; // это поле пароля, не кода
+    const numericish =
+      el.inputMode === "numeric" || type === "tel" || type === "number" || type === "text" || !el.type;
+    if (!numericish) return false;
+    if (el.maxLength === 1) return true; // одна ячейка сегментированного поля
+    const name = ((el.name || "") + " " + (el.id || "") + " " + (el.getAttribute("aria-label") || "")).toLowerCase();
+    return /otp|one.?time|2fa|mfa|totp|auth.?code|security.?code|verif|passcode|\btoken\b|\bcode\b/.test(name);
+  }
+
+  function otpInputs() {
+    return [...document.querySelectorAll("input")].filter(isOtpField);
+  }
+
+  // Один input - вставляем строку целиком; "квадратики" - по цифре в ячейку.
+  function fillOtp(field, code) {
+    const segs = otpInputs().filter((el) => el.maxLength === 1);
+    if (field.maxLength === 1 && segs.length >= code.length) {
+      segs.slice(0, code.length).forEach((el, i) => setValue(el, code[i]));
+      segs[Math.min(code.length, segs.length) - 1].focus();
+    } else {
+      setValue(field, code);
+    }
+  }
+
   function fillFields(m) {
     if (m.login) {
       const user = usernameInputs()[0];
@@ -136,7 +167,44 @@
     }
   }
 
-  async function onFocus(field) {
+  // Показ доступных кодов 2FA над полем (тот же UI, что у паролей).
+  function showCodes(field, items, locked) {
+    const box = baseBox(field);
+    for (const label of items) {
+      const row = document.createElement("div");
+      row.className = "svitok-af__row";
+      const title = document.createElement("div");
+      title.className = "svitok-af__name";
+      title.textContent = "Свиток · " + label + " · 2FA";
+      row.appendChild(title);
+      row.addEventListener("mousedown", (e) => {
+        e.preventDefault();
+        chooseCode(field, label, locked);
+      });
+      box.appendChild(row);
+    }
+    place(box);
+  }
+
+  async function chooseCode(field, label, locked) {
+    note(field, locked ? "Разблокируйте Свиток…" : "Заполняю код…");
+    let resp;
+    try {
+      resp = await chrome.runtime.sendMessage({ op: "code", origin, label });
+    } catch {
+      removeDropdown();
+      return;
+    }
+    if (resp && resp.ok && resp.code) {
+      fillOtp(field, resp.code);
+      removeDropdown();
+    } else {
+      note(field, "Свиток: " + (resp && resp.error ? resp.error : "не вышло"));
+      setTimeout(removeDropdown, 2500);
+    }
+  }
+
+  async function onFocus(field, otp) {
     lastField = field;
     let resp;
     try {
@@ -145,7 +213,10 @@
       return; // старый content script после reload - молчим
     }
     if (field !== lastField || !resp || !resp.ok) return;
-    if (resp.matches && resp.matches.length) {
+    if (otp) {
+      // привязанные коды видны только на разблокированном ваулте (они в сейфе)
+      if (resp.totp && resp.totp.length) showCodes(field, resp.totp, !!resp.locked);
+    } else if (resp.matches && resp.matches.length) {
       showMatches(field, resp.matches, !!resp.locked);
     }
   }
@@ -153,8 +224,11 @@
   document.addEventListener("focusin", (e) => {
     const el = e.target;
     if (!el || !el.matches || !el.matches("input")) return;
-    if (el.type === "password" || usernameInputs().includes(el)) {
-      onFocus(el);
+    // поле кода 2FA имеет приоритет: сегментированная ячейка тоже type=text
+    if (isOtpField(el)) {
+      onFocus(el, true);
+    } else if (el.type === "password" || usernameInputs().includes(el)) {
+      onFocus(el, false);
     }
   });
   document.addEventListener("mousedown", (e) => {

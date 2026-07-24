@@ -1604,6 +1604,27 @@ function sheetAddTotp(refresh: () => void) {
     // период из отсканированного otpauth (30 по умолчанию для ручного ввода)
     let period = 30;
 
+    // Привязка к аккаунту: код будет автозаполняться на его доменах. Список
+    // подтягиваем заранее; выбор наследует домены+логин записи сайта, руками
+    // домены вводить не нужно.
+    const bind = h("select.field", {}) as HTMLSelectElement;
+    let sites: SiteView[] = [];
+    const fillBind = (preselectName?: string) => {
+      clear(bind);
+      bind.append(h("option", { value: "" }, [t("addtotp.bindNone")]));
+      sites.forEach((s, i) => {
+        const title = s.login ? `${s.label || s.name} (${s.login})` : (s.label || s.name);
+        bind.append(h("option", { value: String(i) }, [title]));
+      });
+      if (preselectName) {
+        const p = preselectName.toLowerCase();
+        const idx = sites.findIndex((s) =>
+          s.name.toLowerCase().includes(p) || (s.label && s.label.toLowerCase().includes(p)));
+        if (idx >= 0) bind.value = String(idx);
+      }
+    };
+    api.listSites().then((list) => { sites = list; fillBind(); }).catch(() => {});
+
     // Сканируем otpauth-QR с сайта (только на телефоне).
     const scanBtn = h("button.btn.btn--full", {}, [icons.camera(), t("addtotp.scan")]);
     scanBtn.addEventListener("click", async () => {
@@ -1618,13 +1639,18 @@ function sheetAddTotp(refresh: () => void) {
         secret.value = otp.secret;
         d8.checked = otp.digits8;
         period = otp.period;
+        // issuer из QR («Discord») - подсказка, к какому аккаунту привязать
+        if (otp.issuer) fillBind(otp.issuer);
         haptic("confirm");
       } catch { err.textContent = t("scan.noCamera"); }
     });
     save.addEventListener("click", async () => {
       if (!label.value.trim() || !secret.value.trim()) { err.textContent = t("addtotp.errFill"); return; }
+      const picked = bind.value ? sites[Number(bind.value)] : null;
+      const login = picked ? picked.login : "";
+      const domains = picked ? [picked.name, ...picked.aliases] : [];
       try {
-        const tc = await api.vaultAddTotp(label.value.trim(), secret.value.replace(/\s/g, ""), d8.checked, period);
+        const tc = await api.vaultAddTotp(label.value.trim(), secret.value.replace(/\s/g, ""), d8.checked, period, login, domains);
         markBackupStale(); haptic("confirm");
         toast(t("addtotp.added", { code: tc.code }), "ok");
         close(); refresh();
@@ -1636,6 +1662,7 @@ function sheetAddTotp(refresh: () => void) {
       label,
       withTools(secret, { paste: true }),
       d8sw.el,
+      h("div.t-body-2", {}, [t("addtotp.bindLabel")]), bind,
       err, save,
     ]);
   });

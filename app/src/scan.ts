@@ -27,7 +27,7 @@ export async function scanQr(): Promise<string | null> {
   }
 }
 
-export interface Otp { label: string; secret: string; digits8: boolean; period: number; }
+export interface Otp { label: string; secret: string; digits8: boolean; period: number; issuer: string; }
 
 /** Разбираем otpauth://totp/… - такой QR даёт аутентификатор сайта. */
 export function parseOtpauth(uri: string): Otp | null {
@@ -39,11 +39,12 @@ export function parseOtpauth(uri: string): Otp | null {
     const digits = parseInt(u.searchParams.get("digits") || "6", 10);
     const period = parseInt(u.searchParams.get("period") || "30", 10);
     let label = decodeURIComponent(u.pathname.replace(/^\/+/, ""));
-    const issuer = u.searchParams.get("issuer");
+    // issuer бывает и в query, и префиксом метки «Issuer:account» - берём оба варианта
+    const issuer = u.searchParams.get("issuer") || (label.includes(":") ? label.split(":")[0] : "");
     if (!label && issuer) label = issuer;
     // period держим в разумных рамках, метку не даём разрастись
     const safePeriod = period >= 15 && period <= 120 ? period : 30;
-    return { label: (label || "totp").slice(0, 64), secret, digits8: digits === 8, period: safePeriod };
+    return { label: (label || "totp").slice(0, 64), secret, digits8: digits === 8, period: safePeriod, issuer: issuer.trim() };
   } catch {
     return null;
   }

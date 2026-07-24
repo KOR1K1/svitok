@@ -47,8 +47,9 @@ export const api = {
   vaultList: () => invoke<EntryView[]>("vault_list"),
   totpList: () => invoke<string[]>("totp_list"),
   totpCode: (label: string) => invoke<TotpView>("totp_code", { label }),
-  vaultAddTotp: (label: string, secretB32: string, digits8: boolean, period: number) =>
-    invoke<TotpView>("vault_add_totp", { label, secretB32, digits8, period }),
+  // login+domains - привязка к аккаунту для автозаполнения кода (пусто = только в списке)
+  vaultAddTotp: (label: string, secretB32: string, digits8: boolean, period: number, login: string, domains: string[]) =>
+    invoke<TotpView>("vault_add_totp", { label, secretB32, digits8, period, login, domains }),
   vaultAddPassword: (label: string, secret: string) => invoke<void>("vault_add_password", { label, secret }),
   vaultAddNote: (label: string, text: string) => invoke<void>("vault_add_note", { label, text }),
   vaultAddCodes: (label: string, codes: string[]) => invoke<void>("vault_add_codes", { label, codes }),

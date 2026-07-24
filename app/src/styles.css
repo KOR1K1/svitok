@@ -436,6 +436,18 @@ body {
 .field::placeholder { color: var(--text-3); }
 .field.mono { font-family: "Martian", monospace; letter-spacing: 0.04em; }
 
+/* select как поле: свою стрелку рисуем сами, родная не в тему «Чернил» */
+select.field {
+  appearance: none;
+  -webkit-appearance: none;
+  cursor: pointer;
+  padding-right: 40px;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%23918a80' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 14px center;
+}
+select.field option { background: var(--surface); color: var(--text); }
+
 /* «Показать/скрыть» живёт в самом поле - глаз у правого края.
    Встроенный глаз WebView2 (Edge) прячем - иначе их два разных. */
 input[type="password"]::-ms-reveal { display: none; }
