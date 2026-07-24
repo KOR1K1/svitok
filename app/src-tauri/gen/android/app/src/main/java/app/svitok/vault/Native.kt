@@ -13,4 +13,8 @@ object Native {
     // Полная деривация одного пароля: сид (hex, после биометрии), фраза,
     // параметры KDF и строка сайта из списка. KDF тяжёлый - только с фонового потока.
     external fun derivePassword(seedHex: String, phrase: String, m: Int, t: Int, siteLine: String): String
+
+    // Текущий код привязанного TOTP: сид, фраза, KDF, бумажные строки vault.b32
+    // и метка записи. Расшифровывает сейф, отдаёт код. KDF тяжёлый - фоновый поток.
+    external fun deriveTotp(seedHex: String, phrase: String, m: Int, t: Int, vaultB32: String, label: String): String
 }

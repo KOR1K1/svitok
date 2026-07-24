@@ -39,6 +39,11 @@ class AutofillAuthActivity : FragmentActivity() {
         const val EXTRA_KDF_T = "kdf_t"
         const val EXTRA_USERNAME_ID = "username_id"
         const val EXTRA_PASSWORD_ID = "password_id"
+        // режим TOTP: заполняем код 2FA вместо логина/пароля
+        const val EXTRA_MODE = "mode"
+        const val EXTRA_TOTP_LABEL = "totp_label"
+        const val EXTRA_VAULT = "vault"
+        const val EXTRA_OTP_IDS = "otp_ids"
     }
 
     // палитра фронтенда (styles.css :root)
@@ -69,6 +74,11 @@ class AutofillAuthActivity : FragmentActivity() {
         val usernameId = intent.getParcelableExtra<AutofillId>(EXTRA_USERNAME_ID)
         @Suppress("DEPRECATION")
         val passwordId = intent.getParcelableExtra<AutofillId>(EXTRA_PASSWORD_ID)
+        val isTotp = intent.getStringExtra(EXTRA_MODE) == "totp"
+        val totpLabel = intent.getStringExtra(EXTRA_TOTP_LABEL).orEmpty()
+        val vaultText = intent.getStringExtra(EXTRA_VAULT).orEmpty()
+        @Suppress("DEPRECATION")
+        val otpIds = intent.getParcelableArrayListExtra<AutofillId>(EXTRA_OTP_IDS) ?: arrayListOf()
 
         val golos = ResourcesCompat.getFont(this, R.font.golos)
         val piazzolla = ResourcesCompat.getFont(this, R.font.piazzolla)
@@ -210,16 +220,30 @@ class AutofillAuthActivity : FragmentActivity() {
             status.setTextColor(cText2)
             status.text = "Биометрия…"
             SeedStore.unlockSeedHex(this, { seedHex ->
-                status.text = "Вывожу пароль…"
+                status.text = if (isTotp) "Считаю код…" else "Вывожу пароль…"
                 thread {
-                    val password = Native.derivePassword(seedHex, ph, m, t, siteLine)
-                    runOnUiThread {
-                        if (password.isEmpty()) {
-                            status.setTextColor(cErr)
-                            status.text = "Не вышло вывести пароль"
-                            fill.isEnabled = true
-                        } else {
-                            finishWith(siteName, parseLogin(siteLine), password, usernameId, passwordId)
+                    if (isTotp) {
+                        // код считаем в последний момент (после биометрии), чтобы не протух
+                        val code = Native.deriveTotp(seedHex, ph, m, t, vaultText, totpLabel)
+                        runOnUiThread {
+                            if (code.isEmpty()) {
+                                status.setTextColor(cErr)
+                                status.text = "Не вышло получить код"
+                                fill.isEnabled = true
+                            } else {
+                                finishWithCode(siteName, code, otpIds)
+                            }
+                        }
+                    } else {
+                        val password = Native.derivePassword(seedHex, ph, m, t, siteLine)
+                        runOnUiThread {
+                            if (password.isEmpty()) {
+                                status.setTextColor(cErr)
+                                status.text = "Не вышло вывести пароль"
+                                fill.isEnabled = true
+                            } else {
+                                finishWith(siteName, parseLogin(siteLine), password, usernameId, passwordId)
+                            }
                         }
                     }
                 }
@@ -264,6 +288,26 @@ class AutofillAuthActivity : FragmentActivity() {
         }
         if (passwordId != null) {
             builder.setValue(passwordId, AutofillValue.forText(password), presentation)
+        }
+        val reply = Intent().apply {
+            putExtra(AutofillManager.EXTRA_AUTHENTICATION_RESULT, builder.build())
+        }
+        setResult(RESULT_OK, reply)
+        finish()
+    }
+
+    // Заполнить код 2FA: один input - строкой целиком, «квадратики» - по цифре в поле.
+    private fun finishWithCode(title: String, code: String, otpIds: List<AutofillId>) {
+        val presentation = RemoteViews(packageName, R.layout.autofill_row).apply {
+            setTextViewText(R.id.af_text, "Свиток · $title")
+        }
+        val builder = Dataset.Builder(presentation)
+        if (otpIds.size >= code.length && otpIds.size > 1) {
+            for (i in code.indices) {
+                builder.setValue(otpIds[i], AutofillValue.forText(code[i].toString()), presentation)
+            }
+        } else if (otpIds.isNotEmpty()) {
+            builder.setValue(otpIds[0], AutofillValue.forText(code), presentation)
         }
         val reply = Intent().apply {
             putExtra(AutofillManager.EXTRA_AUTHENTICATION_RESULT, builder.build())

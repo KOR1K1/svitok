@@ -37,8 +37,13 @@ class SvitokAutofillService : AutofillService() {
     private data class Fields(
         val usernameId: AutofillId?,
         val passwordId: AutofillId?,
+        // поля кода 2FA: одно поле или несколько "квадратиков" (maxlength=1)
+        val otpIds: List<AutofillId>,
         val webDomain: String?,
     )
+
+    // Домен + метка привязанного TOTP из плоского индекса totp.idx.
+    private data class TotpLine(val domain: String, val label: String)
 
     private data class SiteLine(
         val name: String,
@@ -65,7 +70,8 @@ class SvitokAutofillService : AutofillService() {
             return
         }
         val fields = parseStructure(structure)
-        if (fields.passwordId == null && fields.usernameId == null) {
+        val hasLogin = fields.passwordId != null || fields.usernameId != null
+        if (!hasLogin && fields.otpIds.isEmpty()) {
             callback.onSuccess(null)
             return
         }
@@ -73,21 +79,26 @@ class SvitokAutofillService : AutofillService() {
         val rawDomain = fields.webDomain ?: structure.activityComponent?.packageName
         val canon = rawDomain?.let { Native.canonicalDomain(it) }.orEmpty()
 
-        val sites = readSites()
-        if (sites == null || sites.lines.isEmpty()) {
-            callback.onSuccess(null)
-            return
+        fun domainMatches(d: String): Boolean {
+            val c = Native.canonicalDomain(d)
+            return (c.isNotEmpty() && c == canon) || (canon.isEmpty() && rawDomain != null && d.equals(rawDomain, true))
         }
+
+        val sites = readSites()
         // запись матчится по name и по каждому alias; алиасы - только матчинг,
         // пароль всегда выводится из name (он в строке raw)
-        val matches = sites.lines.filter { site ->
-            val domains = listOf(site.name) + site.aliases
-            domains.any { d ->
-                val c = Native.canonicalDomain(d)
-                (c.isNotEmpty() && c == canon) || (canon.isEmpty() && rawDomain != null && d.equals(rawDomain, true))
-            }
+        val matches = if (hasLogin && sites != null) {
+            sites.lines.filter { site -> (listOf(site.name) + site.aliases).any { domainMatches(it) } }
+        } else {
+            emptyList()
         }
-        if (matches.isEmpty()) {
+        // привязанные TOTP для этого домена (по индексу totp.idx)
+        val codes = if (fields.otpIds.isNotEmpty()) {
+            readTotpIndex().filter { domainMatches(it.domain) }.distinctBy { it.label }
+        } else {
+            emptyList()
+        }
+        if (matches.isEmpty() && codes.isEmpty()) {
             callback.onSuccess(null)
             return
         }
@@ -99,29 +110,58 @@ class SvitokAutofillService : AutofillService() {
         } else {
             null
         }
+        var slot = 0
 
         val response = FillResponse.Builder()
         val ids = listOfNotNull(fields.usernameId, fields.passwordId)
-        for ((i, site) in matches.withIndex()) {
-            val label = "Свиток · ${site.display()}"
+        if (sites != null) {
+            for (site in matches) {
+                val label = "Свиток · ${site.display()}"
+                val menu = RemoteViews(packageName, R.layout.autofill_row).apply {
+                    setTextViewText(R.id.af_text, label)
+                }
+                val inline = if (Build.VERSION.SDK_INT >= 30 && inlineSpecs != null && slot < inlineSpecs.size) {
+                    buildInline(inlineSpecs[slot], label)
+                } else {
+                    null
+                }
+                val builder = Dataset.Builder()
+                for (id in ids) {
+                    if (Build.VERSION.SDK_INT >= 30 && inline != null) {
+                        builder.setValue(id, null, menu, inline)
+                    } else {
+                        builder.setValue(id, null, menu)
+                    }
+                }
+                builder.setAuthentication(authSender(site, sites.m, sites.t, fields, slot))
+                response.addDataset(builder.build())
+                slot++
+            }
+        }
+        // датасеты кодов 2FA: KDF-параметры берём из sites.txt (или дефолт M20 T21)
+        val km = sites?.m ?: 20
+        val kt = sites?.t ?: 21
+        for (line in codes) {
+            val label = "Свиток · ${line.label} · 2FA"
             val menu = RemoteViews(packageName, R.layout.autofill_row).apply {
                 setTextViewText(R.id.af_text, label)
             }
-            val inline = if (Build.VERSION.SDK_INT >= 30 && inlineSpecs != null && i < inlineSpecs.size) {
-                buildInline(inlineSpecs[i], label)
+            val inline = if (Build.VERSION.SDK_INT >= 30 && inlineSpecs != null && slot < inlineSpecs.size) {
+                buildInline(inlineSpecs[slot], label)
             } else {
                 null
             }
             val builder = Dataset.Builder()
-            for (id in ids) {
+            for (id in fields.otpIds) {
                 if (Build.VERSION.SDK_INT >= 30 && inline != null) {
                     builder.setValue(id, null, menu, inline)
                 } else {
                     builder.setValue(id, null, menu)
                 }
             }
-            builder.setAuthentication(authSender(site, sites.m, sites.t, fields, i))
+            builder.setAuthentication(totpAuthSender(line.label, km, kt, fields, slot))
             response.addDataset(builder.build())
+            slot++
         }
         callback.onSuccess(response.build())
       } catch (e: Throwable) {
@@ -154,6 +194,28 @@ class SvitokAutofillService : AutofillService() {
         return PendingIntent.getActivity(this, index, intent, flags).intentSender
     }
 
+    // Авторизация для кода 2FA: та же AutofillAuthActivity, но режим TOTP - после
+    // биометрии она расшифрует сейф и раскидает код по полям otpIds.
+    private fun totpAuthSender(label: String, m: Int, t: Int, fields: Fields, index: Int): android.content.IntentSender {
+        val intent = Intent(this, AutofillAuthActivity::class.java).apply {
+            putExtra(AutofillAuthActivity.EXTRA_MODE, "totp")
+            putExtra(AutofillAuthActivity.EXTRA_TOTP_LABEL, label)
+            putExtra(AutofillAuthActivity.EXTRA_SITE_NAME, label)
+            putExtra(AutofillAuthActivity.EXTRA_KDF_M, m)
+            putExtra(AutofillAuthActivity.EXTRA_KDF_T, t)
+            // сейф - это шифртекст, без мастер-ключа бесполезен, поэтому передать
+            // его через intent безопасно; расшифрует Native.deriveTotp после биометрии
+            putExtra(AutofillAuthActivity.EXTRA_VAULT, readVaultText().orEmpty())
+            putParcelableArrayListExtra(AutofillAuthActivity.EXTRA_OTP_IDS, ArrayList(fields.otpIds))
+        }
+        val flags = if (Build.VERSION.SDK_INT >= 31) {
+            PendingIntent.FLAG_CANCEL_CURRENT or PendingIntent.FLAG_MUTABLE
+        } else {
+            PendingIntent.FLAG_CANCEL_CURRENT
+        }
+        return PendingIntent.getActivity(this, 5000 + index, intent, flags).intentSender
+    }
+
     @RequiresApi(30)
     private fun buildInline(spec: InlinePresentationSpec, title: String): InlinePresentation? {
         return try {
@@ -183,6 +245,7 @@ class SvitokAutofillService : AutofillService() {
         var username: AutofillId? = null
         var password: AutofillId? = null
         var domain: String? = null
+        val otp = ArrayList<AutofillId>()
         for (i in 0 until structure.windowNodeCount) {
             val root = structure.getWindowNodeAt(i).rootViewNode
             domain = domain ?: findDomain(root)
@@ -191,22 +254,27 @@ class SvitokAutofillService : AutofillService() {
                 when (classify(node)) {
                     Kind.PASSWORD -> if (password == null) password = id
                     Kind.USERNAME -> if (username == null) username = id
+                    // «квадратики» - несколько полей, собираем все по порядку обхода
+                    Kind.OTP -> otp.add(id)
                     Kind.NONE -> {}
                 }
             }
         }
-        return Fields(username, password, domain)
+        return Fields(username, password, otp, domain)
     }
 
-    private enum class Kind { USERNAME, PASSWORD, NONE }
+    private enum class Kind { USERNAME, PASSWORD, OTP, NONE }
 
     // Классифицируем поле по трём источникам: autofillHints (нативные приложения),
     // htmlInfo (веб-формы в браузере - там тип в <input type=...>), и типу поля.
+    // Поле кода 2FA определяем отдельно: autocomplete="one-time-code", hint OTP,
+    // имя с otp/2fa/code или сегментированная ячейка (maxlength=1).
     private fun classify(node: AssistStructure.ViewNode): Kind {
         node.autofillHints?.forEach { h ->
             when (h.lowercase()) {
                 "password", "current-password", "new-password" -> return Kind.PASSWORD
                 "username", "emailaddress", "email" -> return Kind.USERNAME
+                "smsotpcode", "otpcode", "2faappotpcode" -> return Kind.OTP
             }
         }
         val html = node.htmlInfo
@@ -214,14 +282,21 @@ class SvitokAutofillService : AutofillService() {
             var type = ""
             var ac = ""
             var name = ""
+            var maxlen = ""
             html.attributes?.forEach { pair ->
                 when (pair.first.lowercase()) {
                     "type" -> type = pair.second.lowercase()
                     "autocomplete" -> ac = pair.second.lowercase()
-                    "name", "id" -> name += " " + pair.second.lowercase()
+                    "maxlength" -> maxlen = pair.second
+                    "name", "id", "aria-label" -> name += " " + pair.second.lowercase()
                 }
             }
             if (type == "password" || ac.contains("password")) return Kind.PASSWORD
+            if (ac.contains("one-time-code") || maxlen == "1" ||
+                Regex("otp|one.?time|2fa|mfa|totp|passcode|verif|\\bcode\\b|\\btoken\\b").containsMatchIn(name)
+            ) {
+                return Kind.OTP
+            }
             if (type == "email" || ac.contains("username") || ac.contains("email") ||
                 name.contains("user") || name.contains("email") || name.contains("login")
             ) {
@@ -229,7 +304,16 @@ class SvitokAutofillService : AutofillService() {
             }
         }
         if (isPasswordField(node)) return Kind.PASSWORD
+        if (isOtpField(node)) return Kind.OTP
         return Kind.NONE
+    }
+
+    // Нативное поле кода: числовой ввод с явной OTP-подсказкой в имени/hint.
+    private fun isOtpField(node: AssistStructure.ViewNode): Boolean {
+        val cls = node.inputType and InputType.TYPE_MASK_CLASS
+        if (cls != InputType.TYPE_CLASS_NUMBER && cls != InputType.TYPE_CLASS_TEXT) return false
+        val hints = (node.hint.orEmpty() + " " + node.idEntry.orEmpty()).lowercase()
+        return Regex("otp|one.?time|2fa|mfa|totp|passcode|verif|\\bcode\\b").containsMatchIn(hints)
     }
 
     private fun findDomain(node: AssistStructure.ViewNode): String? {
@@ -313,6 +397,31 @@ class SvitokAutofillService : AutofillService() {
             }
         }
         return null
+    }
+
+    // Каталог с данными Свитка (где лежит sites.txt): рядом vault.b32 и totp.idx.
+    private fun dataDir(): File? {
+        val root = filesDir.parentFile ?: filesDir
+        return findSitesFile(root, 0)?.parentFile
+    }
+
+    // Индекс доменов привязанных TOTP (плоский, без секретов): «домен\tметка».
+    private fun readTotpIndex(): List<TotpLine> {
+        val f = dataDir()?.let { File(it, "totp.idx") } ?: return emptyList()
+        if (!f.isFile) return emptyList()
+        val out = ArrayList<TotpLine>()
+        for (raw in f.readLines()) {
+            val i = raw.indexOf('\t')
+            if (i <= 0) continue
+            out.add(TotpLine(raw.substring(0, i), raw.substring(i + 1)))
+        }
+        return out
+    }
+
+    // Бумажные строки vault.b32 - их расшифрует Native.deriveTotp после биометрии.
+    private fun readVaultText(): String? {
+        val f = dataDir()?.let { File(it, "vault.b32") } ?: return null
+        return if (f.isFile) f.readText() else null
     }
 }
 

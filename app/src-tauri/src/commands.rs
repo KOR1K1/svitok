@@ -445,6 +445,7 @@ pub fn destroy_vault(app: tauri::AppHandle, state: State<AppState>) -> Result<()
     crate::seed::clear_seed(&app, &dir)?;
     let _ = std::fs::remove_file(Store::sites_path(&dir));
     let _ = std::fs::remove_file(Store::vault_path(&dir));
+    let _ = std::fs::remove_file(Store::totp_index_path(&dir));
     Ok(())
 }
 
@@ -661,6 +662,16 @@ fn save_entries(dir: &std::path::Path, mk: &[u8; 32], entries: &[Entry]) -> Resu
     let blob = encrypt(mk, entries, nonce);
     let store = if Store::exists(dir) { Store::load(dir)? } else { Store::empty(dir) };
     store.write_vault_blob(&blob)?;
+    // держим плоский индекс доменов TOTP в актуальном виде: Android-автозаполнение
+    // читает его на «пике», когда сейф расшифровать нечем
+    let idx: Vec<(Vec<String>, String)> = entries
+        .iter()
+        .filter_map(|e| match e {
+            Entry::Totp { domains, label, .. } if !domains.is_empty() => Some((domains.clone(), label.clone())),
+            _ => None,
+        })
+        .collect();
+    let _ = Store::write_totp_index(dir, &idx);
     Ok(())
 }
 

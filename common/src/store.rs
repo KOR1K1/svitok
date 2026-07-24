@@ -39,6 +39,36 @@ impl Store {
     pub fn vault_path(dir: &Path) -> PathBuf {
         dir.join("vault.b32")
     }
+    /// Плоский индекс доменов привязанных TOTP: `домен<TAB>метка` построчно.
+    /// Нужен Android-автозаполнению (сервис холодный, сейф расшифровать при
+    /// «пике» не может). Секретов тут нет - домены и так лежат в sites.txt,
+    /// метка это метаданные аккаунта, как логин.
+    pub fn totp_index_path(dir: &Path) -> PathBuf {
+        dir.join("totp.idx")
+    }
+
+    /// Переписать индекс доменов TOTP из пар (домены, метка). Пусто - удалить файл.
+    pub fn write_totp_index(dir: &Path, entries: &[(Vec<String>, String)]) -> Result<(), String> {
+        let mut out = String::new();
+        for (domains, label) in entries {
+            for d in domains {
+                if d.is_empty() {
+                    continue;
+                }
+                out.push_str(d);
+                out.push('\t');
+                out.push_str(label);
+                out.push('\n');
+            }
+        }
+        let path = Self::totp_index_path(dir);
+        if out.is_empty() {
+            let _ = std::fs::remove_file(&path);
+            return Ok(());
+        }
+        std::fs::create_dir_all(dir).map_err(|e| e.to_string())?;
+        atomic_write(&path, out.as_bytes())
+    }
     pub fn exists(dir: &Path) -> bool {
         Self::sites_path(dir).exists()
     }
