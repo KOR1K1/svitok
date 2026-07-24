@@ -188,7 +188,11 @@ You'll need:
 - **Rust** - <https://rustup.rs>; the exact version is pinned in `rust-toolchain.toml`, rustup picks it up on its own
 - **Node.js** 22 (`.nvmrc`) and npm
 - **Tauri** prerequisites for your OS - <https://v2.tauri.app/start/prerequisites/>
-- For Android: **JDK 21**, Android **SDK** + **NDK** (r28), and the Rust Android targets
+- For Android: **JDK 21**, Android **SDK** + **NDK** (the exact version is pinned in `gen/android/app/build.gradle.kts`; see the table in [docs/REPRODUCIBLE.md](docs/REPRODUCIBLE.md)), and the Rust Android targets:
+
+  ```bash
+  rustup target add aarch64-linux-android armv7-linux-androideabi i686-linux-android x86_64-linux-android
+  ```
 
 ```bash
 git clone https://github.com/KOR1K1/svitok
@@ -222,7 +226,7 @@ cd app
 npx tauri android build --apk
 ```
 
-Release APKs are signed with a keystore referenced from `gen/android/keystore.properties` (git-ignored - it holds passwords). Generate your own to build a signed release.
+Release APKs are signed with a keystore referenced from `gen/android/keystore.properties` (git-ignored - it holds passwords). Generate your own to build a signed release. No keystore? Build unsigned with `npx tauri android build --apk --debug`, or run on a connected device with `npx tauri android dev`.
 
 ## Project layout
 
@@ -241,7 +245,7 @@ extension/     MV3 browser extension for desktop autofill
 docs/          logo, screenshots, autofill guide; the paper spec is SPEC.md at the root
 ```
 
-The master key lives in Rust state (`Mutex<Inner>`), is wiped on lock and on drop, and never crosses the IPC bridge into JS. Only derived results and metadata do.
+The master key lives in Rust state (`Mutex<Inner>`), is wiped on lock and on drop, and never crosses the IPC bridge into JS. The seed crosses only as paper lines when you explicitly ask to see it (vault creation, "show seed"); everything else is derived results and metadata.
 
 ## Where to look / what could be better
 
