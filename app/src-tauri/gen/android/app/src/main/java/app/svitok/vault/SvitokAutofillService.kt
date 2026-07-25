@@ -33,12 +33,17 @@ class SvitokAutofillService : AutofillService() {
     private companion object {
         const val TAG = "SvitokAF"
 
-        // Java-\b не видит границ у кириллицы (ASCII-\w), поэтому у «код» границы
-        // прописаны руками - иначе «промокод» тоже станет полем 2FA.
+        // Java-\b на JVM не видит границ у кириллицы (ASCII-\w; на Android ICU
+        // умнее, но тесты бегут на JVM), поэтому у «код» границы прописаны руками -
+        // иначе «промокод» тоже станет полем 2FA.
         val OTP_WORDS = Regex(
             "otp|one.?time|2fa|mfa|totp|passcode|verif|\\bcode\\b|\\btoken\\b" +
                 "|(?:^|[^а-яё])код(?:[^а-яё]|$)|одноразов|проверочн|подтвержд|аутентифи"
         )
+
+        // «code» в имени поля - ещё не 2FA: postal-code, promo code, «промо-код»
+        // проходят \bcode\b и ручную границу, а получать туда живой TOTP нельзя.
+        val OTP_STOP = Regex("zip|postal|country|area|promo|invite|discount|referral|gift|промо")
     }
 
     private data class Fields(
@@ -105,9 +110,13 @@ class SvitokAutofillService : AutofillService() {
         } else {
             emptyList()
         }
-        Log.d(TAG, "fill: domain=$rawDomain canon=$canon user=${fields.usernameId != null} " +
-            "pass=${fields.passwordId != null} otp=${fields.otpIds.size} " +
-            "sites=${matches.size} codes=${codes.size}")
+        // молчит, пока не включишь: adb shell setprop log.tag.SvitokAF D -
+        // домены посещённых сайтов в релизном logcat не нужны
+        if (Log.isLoggable(TAG, Log.DEBUG)) {
+            Log.d(TAG, "fill: domain=$rawDomain canon=$canon user=${fields.usernameId != null} " +
+                "pass=${fields.passwordId != null} otp=${fields.otpIds.size} " +
+                "sites=${matches.size} codes=${codes.size}")
+        }
         if (matches.isEmpty() && codes.isEmpty()) {
             callback.onSuccess(null)
             return
@@ -293,8 +302,10 @@ class SvitokAutofillService : AutofillService() {
             var ac = ""
             var name = ""
             var maxlen = ""
-            // Chrome кладёт свой вердикт в ua-/computed-autofill-hints
-            // (HTML_TYPE_ONE_TIME_CODE, PASSWORD, USERNAME) - надёжнее любых эвристик
+            // Вердикты Chrome из *-autofill-hints (HTML_TYPE_ONE_TIME_CODE, PASSWORD...).
+            // Краудсорсинговый слой шлёт и отрицания - NOT_PASSWORD как раз означает
+            // «похоже на пароль, но не пароль» (обычно это OTP), их пропускаем,
+            // иначе substring-проверка на password сработает наоборот.
             var chrome = ""
             html.attributes?.forEach { pair ->
                 when (pair.first.lowercase()) {
@@ -304,16 +315,21 @@ class SvitokAutofillService : AutofillService() {
                     "name", "id", "aria-label", "label", "placeholder" ->
                         name += " " + pair.second.lowercase()
                     "ua-autofill-hints", "computed-autofill-hints",
-                    "crowdsourcing-autofill-hints" ->
-                        chrome += " " + pair.second.lowercase()
+                    "crowdsourcing-autofill-hints" -> {
+                        val v = pair.second.lowercase()
+                        if (!v.startsWith("not_")) chrome += " $v"
+                    }
                 }
+            }
+            // one-time-code от самого сайта - раньше пароля: краудсорсинг иногда
+            // голосует PASSWORD за поле кода, явная разметка сайта важнее
+            if (ac.contains("one-time-code") || chrome.contains("one_time_code")) {
+                return Kind.OTP
             }
             if (type == "password" || ac.contains("password") || chrome.contains("password")) {
                 return Kind.PASSWORD
             }
-            if (ac.contains("one-time-code") || chrome.contains("one_time_code") ||
-                maxlen == "1" || OTP_WORDS.containsMatchIn(name)
-            ) {
+            if (maxlen == "1" || (OTP_WORDS.containsMatchIn(name) && !OTP_STOP.containsMatchIn(name))) {
                 return Kind.OTP
             }
             if (type == "email" || ac.contains("username") || ac.contains("email") ||
