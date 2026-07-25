@@ -32,6 +32,13 @@ class SvitokAutofillService : AutofillService() {
 
     private companion object {
         const val TAG = "SvitokAF"
+
+        // Java-\b не видит границ у кириллицы (ASCII-\w), поэтому у «код» границы
+        // прописаны руками - иначе «промокод» тоже станет полем 2FA.
+        val OTP_WORDS = Regex(
+            "otp|one.?time|2fa|mfa|totp|passcode|verif|\\bcode\\b|\\btoken\\b" +
+                "|(?:^|[^а-яё])код(?:[^а-яё]|$)|одноразов|проверочн|подтвержд|аутентифи"
+        )
     }
 
     private data class Fields(
@@ -98,6 +105,9 @@ class SvitokAutofillService : AutofillService() {
         } else {
             emptyList()
         }
+        Log.d(TAG, "fill: domain=$rawDomain canon=$canon user=${fields.usernameId != null} " +
+            "pass=${fields.passwordId != null} otp=${fields.otpIds.size} " +
+            "sites=${matches.size} codes=${codes.size}")
         if (matches.isEmpty() && codes.isEmpty()) {
             callback.onSuccess(null)
             return
@@ -283,21 +293,31 @@ class SvitokAutofillService : AutofillService() {
             var ac = ""
             var name = ""
             var maxlen = ""
+            // Chrome кладёт свой вердикт в ua-/computed-autofill-hints
+            // (HTML_TYPE_ONE_TIME_CODE, PASSWORD, USERNAME) - надёжнее любых эвристик
+            var chrome = ""
             html.attributes?.forEach { pair ->
                 when (pair.first.lowercase()) {
                     "type" -> type = pair.second.lowercase()
                     "autocomplete" -> ac = pair.second.lowercase()
                     "maxlength" -> maxlen = pair.second
-                    "name", "id", "aria-label" -> name += " " + pair.second.lowercase()
+                    "name", "id", "aria-label", "label", "placeholder" ->
+                        name += " " + pair.second.lowercase()
+                    "ua-autofill-hints", "computed-autofill-hints",
+                    "crowdsourcing-autofill-hints" ->
+                        chrome += " " + pair.second.lowercase()
                 }
             }
-            if (type == "password" || ac.contains("password")) return Kind.PASSWORD
-            if (ac.contains("one-time-code") || maxlen == "1" ||
-                Regex("otp|one.?time|2fa|mfa|totp|passcode|verif|\\bcode\\b|\\btoken\\b").containsMatchIn(name)
+            if (type == "password" || ac.contains("password") || chrome.contains("password")) {
+                return Kind.PASSWORD
+            }
+            if (ac.contains("one-time-code") || chrome.contains("one_time_code") ||
+                maxlen == "1" || OTP_WORDS.containsMatchIn(name)
             ) {
                 return Kind.OTP
             }
             if (type == "email" || ac.contains("username") || ac.contains("email") ||
+                chrome.contains("username") || chrome.contains("email") ||
                 name.contains("user") || name.contains("email") || name.contains("login")
             ) {
                 return Kind.USERNAME
@@ -308,12 +328,16 @@ class SvitokAutofillService : AutofillService() {
         return Kind.NONE
     }
 
-    // Нативное поле кода: числовой ввод с явной OTP-подсказкой в имени/hint.
+    // Поле кода по имени/hint. У веб-узлов Chrome inputType=0, поэтому редактируемость
+    // проверяем шире: класс ввода, тег input или EditText.
     private fun isOtpField(node: AssistStructure.ViewNode): Boolean {
         val cls = node.inputType and InputType.TYPE_MASK_CLASS
-        if (cls != InputType.TYPE_CLASS_NUMBER && cls != InputType.TYPE_CLASS_TEXT) return false
+        val editable = cls == InputType.TYPE_CLASS_NUMBER || cls == InputType.TYPE_CLASS_TEXT ||
+            node.htmlInfo?.tag?.equals("input", true) == true ||
+            node.className?.contains("EditText") == true
+        if (!editable) return false
         val hints = (node.hint.orEmpty() + " " + node.idEntry.orEmpty()).lowercase()
-        return Regex("otp|one.?time|2fa|mfa|totp|passcode|verif|\\bcode\\b").containsMatchIn(hints)
+        return OTP_WORDS.containsMatchIn(hints)
     }
 
     private fun findDomain(node: AssistStructure.ViewNode): String? {
