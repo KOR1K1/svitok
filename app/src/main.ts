@@ -296,6 +296,9 @@ function settingsBody(refresh: () => void): HTMLElement[] {
     h("div.stack.gap-2", {}, [
       h("div.t-section", {}, [t("settings.about")]),
       h("div.t-body-2", { style: "line-height:1.6" }, [t("settings.aboutBody")]),
+      // Атрибуция обязательна по лицензиям вшитых наборов (иконки под CC BY 4.0),
+      // и человек с установленным приложением README на GitHub не читает.
+      h("div.t-body-2.faint", { style: "line-height:1.6" }, [t("settings.credits")]),
     ]),
     (() => {
       const wrap = h("div.stack.gap-2");
