@@ -21,6 +21,10 @@ pub struct Site {
     pub aliases: Vec<String>,
     /// Отображаемое имя. Пустое - показываем name.
     pub label: String,
+    /// Метки для группировки списка («работа», «банки»). Как и alias - чистые
+    /// метаданные, в деривацию не входят. Запись может нести несколько меток,
+    /// поэтому это теги, а не одна папка.
+    pub tags: Vec<String>,
 }
 
 pub struct Store {
@@ -245,7 +249,7 @@ pub fn atomic_write(path: &Path, contents: &[u8]) -> Result<(), String> {
 
 impl Site {
     /// Разбирает строку списка без ведущего «#»: «имя login=… v=… len=… cls=…
-    /// sym=… alias=… label=… id=…». Умолчания: login пустой, v=1, len=DEFAULT,
+    /// sym=… alias=… tag=… label=… id=…». Умолчания: login пустой, v=1, len=DEFAULT,
     /// cls=luds. Имя - первый токен, без пробелов. alias - домены через запятую,
     /// label - с пробелами в виде %20, id может отсутствовать (старые списки).
     pub fn from_line(line: &str) -> Result<Site, String> {
@@ -259,6 +263,7 @@ impl Site {
         let mut sym: Option<String> = None;
         let mut aliases: Vec<String> = Vec::new();
         let mut label = String::new();
+        let mut tags: Vec<String> = Vec::new();
         for t in toks {
             if let Some(v) = t.strip_prefix("login=") {
                 login = v.to_string();
@@ -272,6 +277,8 @@ impl Site {
                 sym = Some(v.to_string());
             } else if let Some(v) = t.strip_prefix("alias=") {
                 aliases = v.split(',').filter(|a| !a.is_empty()).map(str::to_string).collect();
+            } else if let Some(v) = t.strip_prefix("tag=") {
+                tags = v.split(',').filter(|a| !a.is_empty()).map(decode_label).collect();
             } else if let Some(v) = t.strip_prefix("label=") {
                 label = decode_label(v);
             } else if let Some(v) = t.strip_prefix("id=") {
@@ -282,7 +289,7 @@ impl Site {
         }
         let policy =
             Policy::from_classes(len, &cls, sym.as_deref()).ok_or("недопустимая политика")?;
-        Ok(Site { id, name, login, counter, policy, aliases, label })
+        Ok(Site { id, name, login, counter, policy, aliases, label, tags })
     }
 
     pub fn to_line(&self) -> String {
@@ -317,6 +324,10 @@ impl Site {
         }
         if !self.aliases.is_empty() {
             s.push_str(&format!(" alias={}", self.aliases.join(",")));
+        }
+        if !self.tags.is_empty() {
+            let tags: Vec<String> = self.tags.iter().map(|t| encode_label(t)).collect();
+            s.push_str(&format!(" tag={}", tags.join(",")));
         }
         if !self.label.is_empty() {
             s.push_str(&format!(" label={}", encode_label(&self.label)));
@@ -391,6 +402,9 @@ mod tests {
         roundtrip("wifi sym=!@#$%");
         roundtrip("lolz.guru login=me alias=lolz.live,zelenka.guru id=a1b2c3d4");
         roundtrip("gmail.com login=work@gmail.com label=Рабочая%20почта id=00ff00ff");
+        roundtrip("bank.ru tag=деньги,важное id=deadbeef");
+        // метка с пробелом внутри тега кодируется так же, как label
+        roundtrip("jira.corp tag=рабочие%20дела label=Джира id=cafe0000");
     }
 
     #[test]
@@ -401,6 +415,14 @@ mod tests {
         assert!(!s.to_line().contains("cls="));
         // строка без новых токенов - как из старых версий - обходится без них
         assert!(s.id.is_empty() && s.aliases.is_empty() && s.label.is_empty());
+        assert!(s.tags.is_empty());
+        assert!(!s.to_line().contains("tag="));
+    }
+
+    #[test]
+    fn tags_parse_and_dedupe_empty() {
+        let s = Site::from_line("bank.ru tag=деньги,,важное").unwrap();
+        assert_eq!(s.tags, vec!["деньги", "важное"]);
     }
 
     #[test]
