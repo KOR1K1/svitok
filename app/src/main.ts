@@ -1693,18 +1693,45 @@ function sheetAddSecret(kind: "password" | "note" | "codes", refresh: () => void
 }
 
 function sheetEntry(e: EntryView, refresh: () => void) {
+  enterSensitive();
   openSheet((close) => {
+    const err = h("div.t-body-2.err", { style: "min-height:18px" });
+    const box = h("div.stack.gap-2");
+    const show = h("button.btn.btn--seal.btn--full", {}, [icons.eye(), t("tools.show")]);
     const del = h("button.btn.btn--full", { style: "color:var(--err)" }, [t("entry.delete")]);
+
+    show.addEventListener("click", async () => {
+      err.textContent = "";
+      let secret;
+      try { secret = await api.vaultShow(e.label); }
+      catch (ex) { err.textContent = String(ex); return; }
+      show.remove();
+      haptic("confirm");
+      for (const v of secret.values) {
+        const line = h("div.t-secret.selectable.mono", { style: "word-break:break-all" }, [v]);
+        const copy = h("button.btn.btn--full", {}, [icons.copy(), t("tools.copy")]);
+        copy.addEventListener("click", async () => {
+          try { await copyToClipboard(v); toast(t("tools.copied"), "ok"); haptic("tap"); }
+          catch (ex) { toast(String(ex), "err"); }
+        });
+        box.append(line, copy);
+      }
+    });
+
     del.addEventListener("click", async () => {
       try { await api.vaultRemove(e.label); markBackupStale(); haptic("confirm"); close(); refresh(); }
-      catch (err) { toast(String(err), "err"); }
+      catch (ex) { toast(String(ex), "err"); }
     });
+
     return h("div.stack.gap-3", {}, [
       h("div.t-title", {}, [e.label]),
       h("div.t-body-2.faint", {}, [t("entry.type", { k: t("kind." + e.kind) })]),
+      show,
+      box,
+      err,
       del,
     ]);
-  });
+  }, leaveSensitive);
 }
 
 async function sheetPaper() {

@@ -80,6 +80,16 @@ pub struct EntryView {
     pub label: String,
 }
 
+/// Раскрытая запись сейфа. `values` - одна строка для пароля и заметки, список
+/// для recovery-кодов, секрет в Base32 для TOTP (чтобы перенести в другое
+/// приложение). SecretString затирает память при удалении.
+#[derive(Serialize)]
+pub struct EntrySecret {
+    pub kind: String,
+    pub label: String,
+    pub values: Vec<SecretString>,
+}
+
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct TotpView {
@@ -684,6 +694,34 @@ pub fn vault_list(app: tauri::AppHandle, state: State<AppState>) -> Result<Vec<E
         .iter()
         .map(|e| EntryView { kind: e.kind().to_string(), label: e.label().to_string() })
         .collect())
+}
+
+/// Показать содержимое записи. Сейф уже расшифрован ключом сессии, поэтому
+/// отдельной фразы тут не просим - гейт тот же, что у остальных чтений сейфа:
+/// разблокированное приложение (на Android это биометрия при разблокировке).
+#[tauri::command]
+pub fn vault_show(app: tauri::AppHandle, state: State<AppState>, label: String) -> Result<EntrySecret, String> {
+    let mk = require_key(&state)?;
+    let dir = dir_of(&app)?;
+    let entries = load_entries(&dir, &mk)?;
+    for e in &entries {
+        if e.label() != label {
+            continue;
+        }
+        let values = match e {
+            Entry::Password { secret, .. } => {
+                vec![SecretString(String::from_utf8_lossy(secret).into_owned())]
+            }
+            Entry::Note { text, .. } => vec![SecretString(text.clone())],
+            Entry::Codes { codes, .. } => codes.iter().map(|c| SecretString(c.clone())).collect(),
+            Entry::Totp { secret, .. } => {
+                let b32 = svitok_core::base32::encode(secret);
+                vec![SecretString(String::from_utf8_lossy(&b32).into_owned())]
+            }
+        };
+        return Ok(EntrySecret { kind: e.kind().to_string(), label, values });
+    }
+    Err(format!("Запись «{label}» не найдена"))
 }
 
 #[tauri::command]

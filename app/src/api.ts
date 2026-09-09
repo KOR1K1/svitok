@@ -20,6 +20,7 @@ export interface Unlocked { fingerprint: string; }
 export interface SiteView { id: string; name: string; login: string; counter: number; length: number; classes: string; aliases: string[]; label: string; }
 export interface PasswordView { name: string; login: string; counter: number; password: string; }
 export interface EntryView { kind: string; label: string; }
+export interface EntrySecret { kind: string; label: string; values: string[]; }
 export interface TotpView { label: string; code: string; digits: number; secondsLeft: number; period: number; }
 export interface Paper { kdf: string; sites: string[]; vault: string[]; }
 export interface SyncPreview { added: string[]; updated: string[]; }
@@ -45,6 +46,7 @@ export const api = {
   derivePassword: (id: string) => invoke<PasswordView>("derive_password", { id }),
 
   vaultList: () => invoke<EntryView[]>("vault_list"),
+  vaultShow: (label: string) => invoke<EntrySecret>("vault_show", { label }),
   totpList: () => invoke<string[]>("totp_list"),
   totpCode: (label: string) => invoke<TotpView>("totp_code", { label }),
   // login+domains - привязка к аккаунту для автозаполнения кода (пусто = только в списке)
