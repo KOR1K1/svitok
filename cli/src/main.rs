@@ -203,6 +203,7 @@ fn cmd_add(dir: &PathBuf, args: &[String]) -> Result<(), String> {
     let mut sym: Option<String> = None;
     let mut aliases: Vec<String> = Vec::new();
     let mut label = String::new();
+    let mut tags: Vec<String> = Vec::new();
     for t in &args[1..] {
         if let Some(v) = t.strip_prefix("login=") {
             login = v.to_string();
@@ -216,6 +217,8 @@ fn cmd_add(dir: &PathBuf, args: &[String]) -> Result<(), String> {
             sym = Some(v.to_string());
         } else if let Some(v) = t.strip_prefix("alias=") {
             aliases = v.split(',').filter(|a| !a.is_empty()).map(str::to_string).collect();
+        } else if let Some(v) = t.strip_prefix("tag=") {
+            tags = v.split(',').filter(|a| !a.is_empty()).map(str::to_string).collect();
         } else if let Some(v) = t.strip_prefix("label=") {
             label = v.to_string();
         } else {
@@ -228,7 +231,7 @@ fn cmd_add(dir: &PathBuf, args: &[String]) -> Result<(), String> {
         return Err(format!("{name} с этим логином уже есть (сменить пароль: svitok bump {name})"));
     }
     let policy = Policy::from_classes(len, &cls, sym.as_deref()).ok_or("недопустимая политика")?;
-    let site = Site { id: store.new_id()?, name, login, counter, policy, aliases, label };
+    let site = Site { id: store.new_id()?, name, login, counter, policy, aliases, label, tags };
     println!("добавлено: {}", site.to_line());
     store.sites.push(site);
     store.save()?;
