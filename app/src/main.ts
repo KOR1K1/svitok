@@ -117,7 +117,9 @@ async function boot() {
 
 // онбординг-тур
 
-function screenIntro(onDone: () => void) {
+// startAt держит слайд при пересборке: смена языка перерисовывает тур целиком,
+// и без него человека отбрасывало бы на первый экран.
+function screenIntro(onDone: () => void, startAt = 0) {
   screenBack = null;
   const slides = [
     { title: t("onb.s1.title"), body: t("onb.s1.body") },
@@ -127,7 +129,7 @@ function screenIntro(onDone: () => void) {
     { title: t("onb.s5.title"), body: t("onb.s5.body") },
     { title: t("onb.s6.title"), body: t("onb.s6.body") },
   ];
-  let idx = 0;
+  let idx = Math.min(Math.max(startAt, 0), slides.length - 1);
   const track = h("div.intro__track", {},
     slides.map((s, i) => h("div.intro__slide", {}, [
       logoScroll("logo--lg"),
@@ -174,7 +176,7 @@ function screenIntro(onDone: () => void) {
   const mkLang = (l: "ru" | "en", label: string) => {
     const c = h("button.intro__langchip", {}, [label]);
     if (getLang() === l) c.classList.add("intro__langchip--on");
-    c.addEventListener("click", () => { if (getLang() !== l) { setLang(l); haptic("tap"); screenIntro(onDone); } });
+    c.addEventListener("click", () => { if (getLang() !== l) { setLang(l); haptic("tap"); screenIntro(onDone, idx); } });
     return c;
   };
   const langToggle = h("div.intro__lang", {}, [mkLang("ru", "RU"), mkLang("en", "EN")]);
