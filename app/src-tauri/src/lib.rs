@@ -88,7 +88,10 @@ pub fn run() {
     #[allow(unused_mut)]
     let mut builder = tauri::Builder::default()
         .plugin(init_seed_plugin())
-        .plugin(tauri_plugin_clipboard_manager::init());
+        .plugin(tauri_plugin_clipboard_manager::init())
+        // открытие ссылок отдаём системе (браузер, кошелёк): само приложение
+        // в сеть не ходит и разрешения INTERNET не получает
+        .plugin(tauri_plugin_opener::init());
     // файловый диалог для импорта; зовётся только из Rust-команды, поэтому
     // JS-разрешений на него нет и содержимое файла в webview не попадает
     #[cfg(not(any(target_os = "android", target_os = "ios")))]

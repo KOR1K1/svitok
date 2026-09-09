@@ -64,6 +64,7 @@ pub struct SiteView {
     pub classes: String,
     pub aliases: Vec<String>,
     pub label: String,
+    pub tags: Vec<String>,
 }
 
 #[derive(Serialize)]
@@ -220,6 +221,25 @@ fn check_aliases(aliases: &[String]) -> Result<(), String> {
         }
     }
     Ok(())
+}
+
+/// Теги едут в строке через `tag=a,b`: пробел разделяет токены, запятая - сами
+/// теги. Пустые выкидываем, регистр не трогаем - как человек написал, так и покажем.
+fn tidy_tags(tags: &[String]) -> Result<Vec<String>, String> {
+    let mut out = Vec::new();
+    for raw in tags {
+        let t = raw.trim();
+        if t.is_empty() {
+            continue;
+        }
+        if t.contains(',') {
+            return Err(format!("{t}: запятая внутри метки"));
+        }
+        if !out.contains(&t.to_string()) {
+            out.push(t.to_string());
+        }
+    }
+    Ok(out)
 }
 
 /// Табы и переводы строк в отображаемом имени сводим к пробелу.
@@ -479,6 +499,7 @@ pub fn list_sites(app: tauri::AppHandle, state: State<AppState>) -> Result<Vec<S
             classes: classes_str(&s.policy),
             aliases: s.aliases.clone(),
             label: s.label.clone(),
+            tags: s.tags.clone(),
         })
         .collect())
 }
@@ -497,6 +518,7 @@ pub fn add_site(
     symbols: Option<String>,
     aliases: Vec<String>,
     label: String,
+    tags: Vec<String>,
 ) -> Result<Vec<String>, String> {
     require_key(&state)?;
     check_field(&name, "имя")?;
@@ -519,6 +541,7 @@ pub fn add_site(
         policy,
         aliases,
         label: tidy_label(&label),
+        tags: tidy_tags(&tags)?,
     };
     let warnings = overlap_warnings(&store, &site);
     store.sites.push(site);
@@ -554,6 +577,7 @@ pub fn update_site(
     symbols: Option<String>,
     aliases: Vec<String>,
     label: String,
+    tags: Vec<String>,
 ) -> Result<Vec<String>, String> {
     require_key(&state)?;
     check_field(&login, "логин")?;
@@ -572,6 +596,7 @@ pub fn update_site(
     s.policy = policy;
     s.aliases = aliases;
     s.label = tidy_label(&label);
+    s.tags = tidy_tags(&tags)?;
     let warnings = overlap_warnings(&store, &store.sites[idx]);
     store.save()?;
     Ok(warnings)
@@ -1223,6 +1248,7 @@ pub async fn import_apply(app: tauri::AppHandle, state: State<'_, AppState>, pat
                 policy: policy.clone(),
                 aliases: Vec::new(),
                 label: String::new(),
+                tags: Vec::new(),
             };
             store.sites.push(site);
         }

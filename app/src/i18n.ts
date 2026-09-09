@@ -160,6 +160,13 @@ const ru: Dict = {
   "secret.save": "Сохранить",
   "secret.errFill": "Заполните оба поля",
 
+  "donate.title": "Поддержать",
+  "donate.intro": "Свиток бесплатный и таким останется. Если он вам пригодился - спасибо.",
+  "donate.wallet": "В кошельке",
+  "donate.noWallet": "Кошелёк не найден - скопируйте адрес",
+  "sites.tagAll": "Все",
+  "addsite.tagLabel": "Метки",
+  "addsite.tagPh": "работа, банки",
   "entry.type": "Тип: {k}",
   "entry.delete": "Удалить из сейфа",
 
@@ -420,6 +427,13 @@ const en: Dict = {
   "secret.save": "Save",
   "secret.errFill": "Fill in both fields",
 
+  "donate.title": "Support",
+  "donate.intro": "Svitok is free and always will be. If it's useful to you, thank you.",
+  "donate.wallet": "Open wallet",
+  "donate.noWallet": "No wallet app found - copy the address",
+  "sites.tagAll": "All",
+  "addsite.tagLabel": "Tags",
+  "addsite.tagPh": "work, banking",
   "entry.type": "Type: {k}",
   "entry.delete": "Delete from vault",
 

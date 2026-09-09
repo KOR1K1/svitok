@@ -343,6 +343,59 @@ body {
   font-variant-numeric: tabular-nums;
 }
 .row__main { flex: 1 1 auto; min-width: 0; }
+/* Плашка с буквой вместо порядкового номера. Тон берём из --mono-h (хеш домена),
+   насыщенность низкая, чтобы список оставался «бумажным», а не пёстрым. */
+.row__mono {
+  flex: 0 0 auto;
+  width: 30px;
+  height: 30px;
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 14px;
+  font-weight: 600;
+  color: hsl(var(--mono-h, 0) 50% 82%);
+  background: hsl(var(--mono-h, 0) 25% 26%);
+}
+:root[data-theme="light"] .row__mono {
+  color: hsl(var(--mono-h, 0) 45% 28%);
+  background: hsl(var(--mono-h, 0) 40% 86%);
+}
+.coin { width: 26px; height: 26px; flex: 0 0 auto; }
+.row__tags {
+  font-size: 11px;
+  color: var(--text-3);
+  max-width: 120px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/* лента фильтров: горизонтальная прокрутка, чтобы меток могло быть много */
+.chips {
+  display: flex;
+  gap: 8px;
+  overflow-x: auto;
+  padding-bottom: 10px;
+  scrollbar-width: none;
+}
+.chips::-webkit-scrollbar { display: none; }
+.chip {
+  flex: 0 0 auto;
+  min-height: 32px;
+  padding: 0 14px;
+  border-radius: 16px;
+  border: 1px solid var(--line);
+  background: var(--surface-2);
+  color: var(--text-2);
+  font-size: 13px;
+  white-space: nowrap;
+}
+.chip--on {
+  background: var(--seal);
+  color: var(--on-seal);
+  border-color: var(--seal);
+}
 .row__name { font-size: 16px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .row__sub { font-size: 13px; color: var(--text-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .row__side {
@@ -570,8 +623,21 @@ textarea.field {
   cursor: pointer; touch-action: manipulation;
   transition: color var(--t-fade) var(--fade);
 }
-.tab__icon { width: 26px; height: 26px; stroke: currentColor; fill: none; stroke-width: 1.7; }
+.tab__icon { width: 26px; height: 26px; stroke: currentColor; fill: none; }
+/* Bold-двойник заливается, а не обводится - иначе на нём сработал бы fill:none */
+.tab__icon--solid { fill: currentColor; stroke: none; }
 .tab--active { color: var(--seal); }
+
+/* Стопка контур/заливка: обе иконки в одной ячейке грида, видимую выбирает
+   активное состояние. Грид, а не absolute - высота считается сама. */
+.tab__icons { display: grid; }
+.tab__icons > * { grid-area: 1 / 1; transition: opacity .18s ease, transform .18s ease; }
+.tab__icons > .tab__icon--solid { opacity: 0; transform: scale(.85); }
+.tab--active .tab__icons > .tab__icon:not(.tab__icon--solid) { opacity: 0; transform: scale(1.1); }
+.tab--active .tab__icons > .tab__icon--solid { opacity: 1; transform: scale(1); }
+@media (prefers-reduced-motion: reduce) {
+  .tab__icons > * { transition: none; }
+}
 
 /* Логотип-свиток и вордмарк */
 

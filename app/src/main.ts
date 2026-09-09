@@ -1,6 +1,7 @@
 import { api, clipboardRead, clipboardWrite, clipCopy, clipClear, type SiteView, type EntryView } from "./api";
-import { h, clear, icons, haptic, toast, groupSecret, svgEl, logoScroll, confetti } from "./ui";
+import { h, clear, icons, iconsSolid, coinIcons, haptic, toast, groupSecret, svgEl, logoScroll, confetti } from "./ui";
 import { t, getLang, setLang } from "./i18n";
+import { openUrl } from "@tauri-apps/plugin-opener";
 import { IS_MOBILE, scanQr, parseOtpauth, isScanning } from "./scan";
 import "./styles.css";
 
@@ -253,6 +254,7 @@ function settingsBody(refresh: () => void): HTMLElement[] {
 
   return [
     vaultAddBtn(t("settings.howto"), () => sheetHowto(), icons.info()),
+    vaultAddBtn(t("donate.title"), () => sheetDonate(), icons.heart()),
     h("div.stack.gap-3", {}, [
       h("div.t-section", {}, [t("settings.lang")]),
       segmented([
@@ -1022,9 +1024,9 @@ function screenMain() {
   const content = h("div.grow", { style: "position:relative;overflow:hidden" });
   if (IS_MOBILE) {
     const tabbar = h("div.tabbar", {}, [
-      tabButton("sites", t("tab.sites"), icons.sites(), content),
-      tabButton("codes", t("tab.codes"), icons.codes(), content),
-      tabButton("vault", t("tab.vault"), icons.vault(), content),
+      tabButton("sites", t("tab.sites"), icons.sites(), iconsSolid.sites(), content),
+      tabButton("codes", t("tab.codes"), icons.codes(), iconsSolid.codes(), content),
+      tabButton("vault", t("tab.vault"), icons.vault(), iconsSolid.vault(), content),
     ]);
     setScreen(h("div.screen", {}, [content, tabbar]));
     selectTab(currentTab, content, tabbar);
@@ -1046,8 +1048,8 @@ let shellNav: HTMLElement | null = null;
 /** Боковая навигация для десктопа: бренд, вкладки, а снизу настройки и блокировка. */
 function buildSidebar(content: HTMLElement): HTMLElement {
   const nav = h("div.sidebar");
-  const navItem = (tab: Tab, label: string, icon: SVGElement) => {
-    const el = h("div.navitem", { "data-tab": tab }, [icon, h("span", {}, [label])]);
+  const navItem = (tab: Tab, label: string, icon: SVGElement, solid: SVGElement) => {
+    const el = h("div.navitem", { "data-tab": tab }, [h("div.tab__icons", {}, [icon, solid]), h("span", {}, [label])]);
     el.addEventListener("click", () => selectTab(tab, content, nav));
     return el;
   };
@@ -1058,9 +1060,9 @@ function buildSidebar(content: HTMLElement): HTMLElement {
   };
   nav.append(
     h("div.nav__brand", {}, [logoScroll("logo--sm"), h("div.wordmark", {}, [t("app.name")])]),
-    navItem("sites", t("tab.sites"), icons.sites()),
-    navItem("codes", t("tab.codes"), icons.codes()),
-    navItem("vault", t("tab.vault"), icons.vault()),
+    navItem("sites", t("tab.sites"), icons.sites(), iconsSolid.sites()),
+    navItem("codes", t("tab.codes"), icons.codes(), iconsSolid.codes()),
+    navItem("vault", t("tab.vault"), icons.vault(), iconsSolid.vault()),
     h("div.grow"),
     action(t("settings.title"), icons.gear(), () => screenSettings(), "settings"),
     action(t("vault.lock"), icons.lock(), () => lockNow()),
@@ -1068,8 +1070,10 @@ function buildSidebar(content: HTMLElement): HTMLElement {
   return nav;
 }
 
-function tabButton(tab: Tab, label: string, icon: SVGElement, content: HTMLElement): HTMLElement {
-  const btn = h("div.tab", { "data-tab": tab }, [icon, h("span", {}, [label])]);
+// Обе иконки лежат в стопке, видимую выбирает CSS по .tab--active - переключение
+// контур/заливка идёт плавно и без перерисовки узла.
+function tabButton(tab: Tab, label: string, icon: SVGElement, solid: SVGElement, content: HTMLElement): HTMLElement {
+  const btn = h("div.tab", { "data-tab": tab }, [h("div.tab__icons", {}, [icon, solid]), h("span", {}, [label])]);
   btn.addEventListener("click", () => {
     haptic("tap");
     selectTab(tab, content, btn.parentElement as HTMLElement);
@@ -1094,7 +1098,8 @@ async function renderSites(content: HTMLElement) {
   clear(content);
   const search = h("input.field", { placeholder: t("sites.search"), autocomplete: "off" }) as HTMLInputElement;
   const list = h("div.stack");
-  const scroll = h("div.screen__scroll", {}, [h("div.px", { style: "padding-bottom:12px" }, [search]), list]);
+  const chips = h("div.chips.px");
+  const scroll = h("div.screen__scroll", {}, [h("div.px", { style: "padding-bottom:12px" }, [search]), chips, list]);
   const fab = h("button.fab", { "aria-label": t("sites.addAria") }, ["+"]);
   fab.addEventListener("click", () => { haptic("tap"); sheetAddSite(() => renderSites(content)); });
   content.append(h("div.stack", { style: "height:100%" }, [
@@ -1104,15 +1109,19 @@ async function renderSites(content: HTMLElement) {
 
   let sites: SiteView[] = [];
   try { sites = await api.listSites(); } catch (e) { toast(String(e), "err"); }
+  // выбранная метка живёт рядом с поиском: они сужают список независимо
+  let tag = "";
   const draw = (filter: string) => {
     clear(list);
     const q = filter.trim().toLowerCase();
     const shown = sites.filter((s) =>
-      !q ||
+      (!tag || s.tags.includes(tag)) &&
+      (!q ||
       s.name.toLowerCase().includes(q) ||
       s.login.toLowerCase().includes(q) ||
       s.label.toLowerCase().includes(q) ||
-      s.aliases.some((a) => a.toLowerCase().includes(q)));
+      s.tags.some((a) => a.toLowerCase().includes(q)) ||
+      s.aliases.some((a) => a.toLowerCase().includes(q))));
     if (!shown.length) {
       if (sites.length) {
         list.append(h("div.empty", {}, [t("sites.notFound")]));
@@ -1126,24 +1135,56 @@ async function renderSites(content: HTMLElement) {
       }
       return;
     }
-    shown.forEach((s, i) => list.append(siteRow(s, i + 1, content)));
+    shown.forEach((s) => list.append(siteRow(s, content)));
+  };
+  const drawChips = () => {
+    clear(chips);
+    const all = Array.from(new Set(sites.flatMap((s) => s.tags))).sort((a, b) => a.localeCompare(b));
+    if (!all.length) return;
+    const mk = (value: string, text: string) => {
+      const c = h("button.chip", {}, [text]);
+      if (tag === value) c.classList.add("chip--on");
+      c.addEventListener("click", () => {
+        haptic("tap");
+        tag = tag === value ? "" : value;
+        drawChips();
+        draw(search.value);
+      });
+      return c;
+    };
+    chips.append(mk("", t("sites.tagAll")), ...all.map((x) => mk(x, x)));
   };
   search.addEventListener("input", () => draw(search.value));
+  drawChips();
   draw("");
 }
 
-function siteRow(s: SiteView, num: number, content: HTMLElement): HTMLElement {
+/// Цвет плашки выводим из домена деривации: одна и та же запись всегда одного
+/// цвета, а список читается взглядом без иконок из сети.
+function monogram(s: SiteView): HTMLElement {
+  let hash = 0;
+  for (const ch of s.name) hash = (hash * 31 + ch.codePointAt(0)!) >>> 0;
+  const letter = (s.label || s.name).trim().charAt(0).toUpperCase() || "?";
+  const el = h("div.row__mono", {}, [letter]);
+  el.style.setProperty("--mono-h", String(hash % 360));
+  return el;
+}
+
+function siteRow(s: SiteView, content: HTMLElement): HTMLElement {
   // label - отображаемое имя; при нём домен деривации уходит в подзаголовок
   const title = s.label || s.name;
   const subParts = [s.label ? s.name : "", s.login].filter(Boolean);
   const sub = subParts.length ? subParts.join(" · ") : t("sites.noLogin");
+  const side: (Node | string)[] = [];
+  if (s.tags.length) side.push(h("span.row__tags", {}, [s.tags.join(" · ")]));
+  if (s.counter > 1) side.push(h("span.faint", {}, ["v" + s.counter]));
   const row = h("div.row.tap", {}, [
-    h("div.row__num", {}, [String(num).padStart(2, "0")]),
+    monogram(s),
     h("div.row__main", {}, [
       h("div.row__name", {}, [title]),
       h("div.row__sub", {}, [sub]),
     ]),
-    h("div.row__side", {}, [s.counter > 1 ? h("span.faint", {}, ["v" + s.counter]) : h("span")]),
+    h("div.row__side", {}, side.length ? side : [h("span")]),
     icons.chev(),
   ]);
   row.addEventListener("click", () => { haptic("tap"); sheetPassword(s, () => renderSites(content)); });
@@ -1527,6 +1568,7 @@ function sheetAddSite(refresh: () => void, edit?: SiteView) {
     if (isEdit) { name.readOnly = true; name.style.opacity = "0.6"; }
     const login = h("input.field", { placeholder: t("addsite.loginPh"), autocomplete: "off", value: edit?.login ?? "" }) as HTMLInputElement;
     const aliases = h("input.field", { placeholder: t("addsite.aliasPh"), autocomplete: "off", value: edit?.aliases.join(", ") ?? "" }) as HTMLInputElement;
+    const tags = h("input.field", { placeholder: t("addsite.tagPh"), autocomplete: "off", value: edit?.tags.join(", ") ?? "" }) as HTMLInputElement;
     const label = h("input.field", { placeholder: t("addsite.labelPh"), autocomplete: "off", value: edit?.label ?? "" }) as HTMLInputElement;
     const len = h("input.field.mono", { type: "number", value: String(edit?.length ?? 20), inputmode: "numeric" }) as HTMLInputElement;
     const src = edit?.classes ?? "luds";
@@ -1550,10 +1592,12 @@ function sheetAddSite(refresh: () => void, edit?: SiteView) {
       if (!classes) { err.textContent = t("addsite.errClass"); return; }
       // «другие домены»: через запятую или пробел, пустое выкидываем
       const aliasList = aliases.value.split(/[\s,]+/).map((a) => a.trim()).filter(Boolean);
+      // теги разделяем только запятой: внутри метки пробел допустим («личные счета»)
+      const tagList = tags.value.split(",").map((a) => a.trim()).filter(Boolean);
       try {
         const warnings = isEdit
-          ? await api.updateSite(edit!.id, login.value.trim(), edit!.counter, Number(len.value) || 20, classes, null, aliasList, label.value.trim())
-          : await api.addSite(name.value.trim(), login.value.trim(), 1, Number(len.value) || 20, classes, null, aliasList, label.value.trim());
+          ? await api.updateSite(edit!.id, login.value.trim(), edit!.counter, Number(len.value) || 20, classes, null, aliasList, label.value.trim(), tagList)
+          : await api.addSite(name.value.trim(), login.value.trim(), 1, Number(len.value) || 20, classes, null, aliasList, label.value.trim(), tagList);
         markBackupStale(); haptic("confirm"); close(); refresh();
         // пересечение доменов с другой записью - не ошибка, но пользователю
         // стоит знать, что на той странице предложатся обе (с разными паролями)
@@ -1565,6 +1609,7 @@ function sheetAddSite(refresh: () => void, edit?: SiteView) {
       h("div.t-title", {}, [isEdit ? t("addsite.editTitle") : t("addsite.title")]),
       name, login,
       h("div.t-body-2", {}, [t("addsite.aliasLabel")]), aliases,
+      h("div.t-body-2", {}, [t("addsite.tagLabel")]), tags,
       label,
       h("div.t-body-2", {}, [t("addsite.lenLabel")]), len,
       h("div.t-body-2", {}, [t("addsite.charsLabel")]), chips,
@@ -1734,6 +1779,77 @@ function sheetEntry(e: EntryView, refresh: () => void) {
       del,
     ]);
   }, leaveSensitive);
+}
+
+// Boosty (https://boosty.to/kor1k1) появится здесь, когда страница заработает:
+// вести человека на пустую страницу хуже, чем не показывать кнопку вовсе.
+
+/** Кошельки для поддержки. Адреса публичные, секретов тут нет. */
+const DONATE = [
+  { coin: "btc", name: "Bitcoin", addr: "bc1qt2g7qwm4gxcdcfhh25k3d4g96j3ckasa8pmhpm", uri: "bitcoin:" },
+  { coin: "eth", name: "Ethereum", addr: "0xB1b11F48e49cB738150428501dF7D6B033091661", uri: "ethereum:" },
+  { coin: "xmr", name: "Monero", addr: "45X9e62m6fcKe6UJhRFP69CjtRDKRPmkULui7YW9zav18dJJ8UQbUFq2zdPVawPqPya74Pu6FWo7cdXS7vjtc2WLKeL7qKz", uri: "monero:" },
+  { coin: "usdt", name: "USDT · TRC20", addr: "TLQXr9jjvFtJMNyvzeKrNnxgwiaTzwD2dW", uri: "tron:" },
+];
+
+/** Середину адреса скрываем: строка длинная, а сверяют обычно начало и конец. */
+function shortAddr(a: string): string {
+  return a.length > 24 ? a.slice(0, 10) + "…" + a.slice(-8) : a;
+}
+
+function sheetDonate() {
+  openSheet(() => {
+    const rows = DONATE.map((d) => {
+      const qrBox = h("div.stack", { style: "display:none" });
+      const addr = h("div.mono.t-body-2.selectable", { style: "word-break:break-all;color:var(--text-2)" }, [shortAddr(d.addr)]);
+
+      const copy = h("button.btn", {}, [icons.copy(), t("tools.copy")]);
+      copy.addEventListener("click", async () => {
+        try { await copyToClipboard(d.addr); toast(t("tools.copied"), "ok"); haptic("confirm"); }
+        catch (e) { toast(String(e), "err"); }
+      });
+
+      const qr = h("button.btn", {}, [icons.qr(), "QR"]);
+      let qrLoaded = false;
+      qr.addEventListener("click", async () => {
+        haptic("tap");
+        if (qrBox.style.display === "none") {
+          if (!qrLoaded) {
+            try {
+              qrBox.innerHTML = await api.qrSvg(d.addr);
+              qrLoaded = true;
+            } catch (e) { toast(String(e), "err"); return; }
+          }
+          qrBox.style.display = "";
+        } else {
+          qrBox.style.display = "none";
+        }
+      });
+
+      const open = h("button.btn", {}, [t("donate.wallet")]);
+      open.addEventListener("click", async () => {
+        haptic("tap");
+        try { await openUrl(d.uri + d.addr); }
+        catch { toast(t("donate.noWallet"), "err"); }
+      });
+
+      return h("div.stack.gap-2", { style: "padding:12px 0;border-bottom:1px solid var(--line)" }, [
+        h("div", { style: "display:flex;align-items:center;gap:10px" }, [
+          coinIcons[d.coin](),
+          h("div.t-body", {}, [d.name]),
+        ]),
+        addr,
+        h("div", { style: "display:flex;gap:8px;flex-wrap:wrap" }, [copy, qr, open]),
+        qrBox,
+      ]);
+    });
+
+    return h("div.stack.gap-3", {}, [
+      h("div.t-title", {}, [t("donate.title")]),
+      h("div.t-body-2", { style: "line-height:1.6" }, [t("donate.intro")]),
+      ...rows,
+    ]);
+  });
 }
 
 async function sheetPaper() {
