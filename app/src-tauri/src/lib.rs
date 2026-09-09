@@ -128,6 +128,7 @@ pub fn run() {
             commands::show_seed,
             commands::derive_password,
             commands::vault_list,
+            commands::vault_show,
             commands::totp_list,
             commands::totp_code,
             commands::vault_add_totp,
