@@ -281,6 +281,13 @@ What Svitok does differently, and why:
 
 The dark "ink" visual language and the from-scratch approach are the project's own.
 
+### Bundled assets
+
+- Icons: **[Solar Icon Set](https://github.com/480-Design/Solar-Icon-Set)** by 480 Design, licensed under [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/). The Linear and Bold outlines are inlined in `app/src/ui.ts` rather than pulled at runtime - the app makes no network requests.
+- Type: **Golos Text** (SIL Open Font License 1.1).
+
+The scroll logo is the project's own.
+
 ## Donate
 
 Svitok is free and always will be. If it's useful and you want to help, thank you.

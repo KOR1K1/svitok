@@ -17,7 +17,7 @@ export const clipClear = () => invoke<void>("clip_clear");
 export interface Status { hasVault: boolean; hasSeed: boolean; unlocked: boolean; }
 export interface NewVault { fingerprint: string; seedPaper: string[]; }
 export interface Unlocked { fingerprint: string; }
-export interface SiteView { id: string; name: string; login: string; counter: number; length: number; classes: string; aliases: string[]; label: string; }
+export interface SiteView { id: string; name: string; login: string; counter: number; length: number; classes: string; aliases: string[]; label: string; tags: string[]; }
 export interface PasswordView { name: string; login: string; counter: number; password: string; }
 export interface EntryView { kind: string; label: string; }
 export interface EntrySecret { kind: string; label: string; values: string[]; }
@@ -36,11 +36,11 @@ export const api = {
 
   listSites: () => invoke<SiteView[]>("list_sites"),
   // add/update возвращают мягкие предупреждения о пересечении доменов с другими записями
-  addSite: (name: string, login: string, counter: number, length: number, classes: string, symbols: string | null, aliases: string[], label: string) =>
-    invoke<string[]>("add_site", { name, login, counter, length, classes, symbols, aliases, label }),
+  addSite: (name: string, login: string, counter: number, length: number, classes: string, symbols: string | null, aliases: string[], label: string, tags: string[]) =>
+    invoke<string[]>("add_site", { name, login, counter, length, classes, symbols, aliases, label, tags }),
   bumpSite: (id: string) => invoke<number>("bump_site", { id }),
-  updateSite: (id: string, login: string, counter: number, length: number, classes: string, symbols: string | null, aliases: string[], label: string) =>
-    invoke<string[]>("update_site", { id, login, counter, length, classes, symbols, aliases, label }),
+  updateSite: (id: string, login: string, counter: number, length: number, classes: string, symbols: string | null, aliases: string[], label: string, tags: string[]) =>
+    invoke<string[]>("update_site", { id, login, counter, length, classes, symbols, aliases, label, tags }),
   removeSite: (id: string) => invoke<void>("remove_site", { id }),
   showSeed: (phrase: string) => invoke<string[]>("show_seed", { phrase }),
   derivePassword: (id: string) => invoke<PasswordView>("derive_password", { id }),
